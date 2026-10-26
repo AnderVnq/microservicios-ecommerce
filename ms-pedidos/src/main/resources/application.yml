@@ -15,6 +15,11 @@ spring:
   h2:
     console:
       enabled: true
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8180/realms/microservicios/protocol/openid-connect/certs}
 
 management:
   endpoints:

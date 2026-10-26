@@ -21,6 +21,13 @@ spring:
               uri: ${PEDIDOS_SERVICE_URI:http://localhost:8083}
               predicates:
                 - Path=/api/v1/pedidos/**
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Validamos la firma contra las JWKS de Keycloak; no usamos issuer-uri
+          # para evitar el mismatch localhost (cliente) vs keycloak (red docker) en el claim "iss".
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8180/realms/microservicios/protocol/openid-connect/certs}
 
 management:
   endpoints:

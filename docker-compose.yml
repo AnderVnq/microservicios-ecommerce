@@ -17,6 +17,23 @@ services:
       timeout: 5s
       retries: 10
 
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    container_name: keycloak
+    command: ["start-dev", "--import-realm"]
+    restart: unless-stopped
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HOSTNAME: localhost
+      KC_HOSTNAME_PORT: "8180"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "8180:8080"
+    volumes:
+      - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
+
   ms-markets:
     build:
       context: .
@@ -27,11 +44,14 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/markets_db
       DB_USER: app
       DB_PASSWORD: app
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
     ports:
       - "8081:8081"
     depends_on:
       mysql:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
   ms-clientes:
     build:
@@ -43,11 +63,14 @@ services:
       DB_URL: jdbc:mysql://mysql:3306/clientes_db
       DB_USER: app
       DB_PASSWORD: app
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
     ports:
       - "8082:8082"
     depends_on:
       mysql:
         condition: service_healthy
+      keycloak:
+        condition: service_started
 
   ms-pedidos:
     build:
@@ -60,11 +83,14 @@ services:
       DB_USER: app
       DB_PASSWORD: app
       CLIENTES_SERVICE_URI: http://ms-clientes:8082
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
     ports:
       - "8083:8083"
     depends_on:
       mysql:
         condition: service_healthy
+      keycloak:
+        condition: service_started
       ms-clientes:
         condition: service_started
 
@@ -78,12 +104,14 @@ services:
       MARKETS_SERVICE_URI: http://ms-markets:8081
       CLIENTES_SERVICE_URI: http://ms-clientes:8082
       PEDIDOS_SERVICE_URI: http://ms-pedidos:8083
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
     ports:
       - "8080:8080"
     depends_on:
       - ms-markets
       - ms-clientes
       - ms-pedidos
+      - keycloak
 
 volumes:
   mysql-data:
