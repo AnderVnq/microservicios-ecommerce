@@ -1,0 +1,27 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: ms-clientes
+  datasource:
+    url: ${DB_URL:jdbc:h2:mem:clientes;MODE=MySQL}
+    username: ${DB_USER:sa}
+    password: ${DB_PASSWORD:}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+clientes:
+  # Cupo maximo de importaciones por cliente titular (compartido con sus familiares asociados)
+  max-importaciones-default: 3
