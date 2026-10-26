@@ -1,0 +1,89 @@
+services:
+
+  mysql:
+    image: mysql:8.4
+    container_name: microservicios-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ms-markets:
+    build:
+      context: .
+      dockerfile: ms-markets/Dockerfile
+    container_name: ms-markets
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/markets_db
+      DB_USER: app
+      DB_PASSWORD: app
+    ports:
+      - "8081:8081"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  ms-clientes:
+    build:
+      context: .
+      dockerfile: ms-clientes/Dockerfile
+    container_name: ms-clientes
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/clientes_db
+      DB_USER: app
+      DB_PASSWORD: app
+    ports:
+      - "8082:8082"
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+  ms-pedidos:
+    build:
+      context: .
+      dockerfile: ms-pedidos/Dockerfile
+    container_name: ms-pedidos
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://mysql:3306/pedidos_db
+      DB_USER: app
+      DB_PASSWORD: app
+      CLIENTES_SERVICE_URI: http://ms-clientes:8082
+    ports:
+      - "8083:8083"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      ms-clientes:
+        condition: service_started
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    restart: unless-stopped
+    environment:
+      MARKETS_SERVICE_URI: http://ms-markets:8081
+      CLIENTES_SERVICE_URI: http://ms-clientes:8082
+      PEDIDOS_SERVICE_URI: http://ms-pedidos:8083
+    ports:
+      - "8080:8080"
+    depends_on:
+      - ms-markets
+      - ms-clientes
+      - ms-pedidos
+
+volumes:
+  mysql-data:
