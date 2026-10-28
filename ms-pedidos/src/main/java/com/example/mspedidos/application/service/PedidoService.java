@@ -1,11 +1,10 @@
 package com.example.mspedidos.application.service;
 
-import com.example.mspedidos.domain.exception.CupoImportacionNoDisponibleException;
 import com.example.mspedidos.domain.exception.PedidoNotFoundException;
 import com.example.mspedidos.domain.model.EstadoPedido;
 import com.example.mspedidos.domain.model.Pedido;
 import com.example.mspedidos.application.port.in.PedidoUseCase;
-import com.example.mspedidos.application.port.out.CupoImportacionPort;
+import com.example.mspedidos.application.port.out.PedidoEventPublisherPort;
 import com.example.mspedidos.application.port.out.PedidoRepositoryPort;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -14,13 +13,19 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.List;
 
+/**
+ * Saga coreografiado para el cupo de importaciones: ms-pedidos nunca llama
+ * sincronamente a ms-clientes. Publica su intencion via PedidoEventPublisherPort
+ * y el pedido queda PENDIENTE hasta que onRespuestaReservaCupo (disparado por
+ * el listener de RabbitMQ) confirma o cancela el pedido.
+ */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class PedidoService implements PedidoUseCase {
 
     private final PedidoRepositoryPort pedidoRepository;
-    private final CupoImportacionPort cupoImportacionPort;
+    private final PedidoEventPublisherPort pedidoEventPublisher;
 
     @Override
     public List<Pedido> findAll() {
@@ -41,18 +46,13 @@ public class PedidoService implements PedidoUseCase {
                 Pedido.nuevo(marketId, clienteId, familiarId, requiereImportacion, total, moneda));
 
         if (requiereImportacion) {
-            try {
-                cupoImportacionPort.reservar(clienteId, pedido.getId(), pedido.idempotencyKeyCupo());
-                pedido.confirmar();
-            } catch (CupoImportacionNoDisponibleException e) {
-                pedido.cancelar();
-                pedidoRepository.save(pedido);
-                throw e;
-            }
+            // El pedido queda PENDIENTE: el saga lo confirma o cancela de forma asincrona.
+            pedidoEventPublisher.publicarSolicitudReservaCupo(pedido.getId(), clienteId, pedido.idempotencyKeyCupo());
         } else {
             pedido.confirmar();
+            pedido = pedidoRepository.save(pedido);
         }
-        return pedidoRepository.save(pedido);
+        return pedido;
     }
 
     @Override
@@ -67,10 +67,28 @@ public class PedidoService implements PedidoUseCase {
     @Transactional
     public void cancelar(Long id) {
         Pedido pedido = findById(id);
-        if (pedido.isRequiereImportacion() && pedido.getEstado() != EstadoPedido.CANCELADO) {
-            cupoImportacionPort.liberar(pedido.getClienteId(), pedido.idempotencyKeyCupo());
-        }
+        boolean compensarCupo = pedido.isRequiereImportacion() && pedido.getEstado() == EstadoPedido.CONFIRMADO;
         pedido.cancelar();
+        pedidoRepository.save(pedido);
+
+        if (compensarCupo) {
+            // Accion compensatoria del saga: el cupo ya estaba reservado, hay que liberarlo.
+            pedidoEventPublisher.publicarPedidoCancelado(pedido.getId(), pedido.getClienteId(), pedido.idempotencyKeyCupo());
+        }
+    }
+
+    @Override
+    @Transactional
+    public void onRespuestaReservaCupo(Long pedidoId, boolean cupoReservado) {
+        Pedido pedido = findById(pedidoId);
+        if (pedido.getEstado() != EstadoPedido.PENDIENTE) {
+            return; // Respuesta tardia o duplicada del saga: el pedido ya fue resuelto.
+        }
+        if (cupoReservado) {
+            pedido.confirmar();
+        } else {
+            pedido.cancelar();
+        }
         pedidoRepository.save(pedido);
     }
 }

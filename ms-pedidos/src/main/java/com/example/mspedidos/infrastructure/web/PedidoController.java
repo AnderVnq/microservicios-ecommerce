@@ -12,6 +12,11 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+/**
+ * Cuando requiereImportacion=true, el pedido se crea en PENDIENTE y el saga
+ * de reserva de cupo (via RabbitMQ) lo confirma o cancela de forma asincrona:
+ * el cliente debe volver a consultar GET /{id} para ver el estado final.
+ */
 @RestController
 @RequestMapping("/api/v1/pedidos")
 @RequiredArgsConstructor

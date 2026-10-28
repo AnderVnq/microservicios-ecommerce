@@ -1,6 +1,5 @@
 package com.example.mspedidos.infrastructure.web.exception;
 
-import com.example.mspedidos.domain.exception.CupoImportacionNoDisponibleException;
 import com.example.mspedidos.domain.exception.PedidoNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,12 +16,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleNotFound(PedidoNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(ApiError.of("NOT_FOUND", ex.getMessage()));
-    }
-
-    @ExceptionHandler(CupoImportacionNoDisponibleException.class)
-    public ResponseEntity<ApiError> handleCupoAgotado(CupoImportacionNoDisponibleException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiError.of("CUPO_IMPORTACION_AGOTADO", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
