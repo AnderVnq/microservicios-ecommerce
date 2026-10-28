@@ -104,6 +104,25 @@ services:
       rabbitmq:
         condition: service_healthy
 
+  ms-auth:
+    build:
+      context: .
+      dockerfile: ms_auth/Dockerfile
+    container_name: ms-auth
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://${DB_HOST:-host.docker.internal}:${DB_PORT:-3306}/usuarios_db
+      DB_USER: ${DB_USER:-app}
+      DB_PASSWORD: ${DB_PASSWORD:-app}
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
+    ports:
+      - "8084:8084"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      keycloak:
+        condition: service_started
+
   api-gateway:
     build:
       context: .
@@ -114,6 +133,7 @@ services:
       MARKETS_SERVICE_URI: http://ms-markets:8081
       CLIENTES_SERVICE_URI: http://ms-clientes:8082
       PEDIDOS_SERVICE_URI: http://ms-pedidos:8083
+      AUTH_SERVICE_URI: http://ms-auth:8084
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
     ports:
       - "8080:8080"
@@ -121,4 +141,5 @@ services:
       - ms-markets
       - ms-clientes
       - ms-pedidos
+      - ms-auth
       - keycloak
