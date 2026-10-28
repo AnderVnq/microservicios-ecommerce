@@ -14,9 +14,9 @@ public interface MarketUseCase {
 
     Market findById(Long id);
 
-    Market create(String code, String name, String currency);
+    Market create(String marca, String tipo, Integer slaEntregaHoras);
 
-    Market update(Long id, String code, String name, String currency);
+    Market update(Long id, String marca, String tipo, Integer slaEntregaHoras);
 
     void deactivate(Long id);
 }

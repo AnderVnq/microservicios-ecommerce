@@ -1,19 +1,19 @@
 package com.example.msmarkets.infrastructure.web.dto;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.Positive;
 
 public record MarketRequest(
 
+        /** Ej: Falabella, Ripley. Se repite entre varios Market del mismo tipo distinto. */
         @NotBlank
-        @Size(max = 10)
-        String code,
+        String marca,
 
+        /** Ej: Express, USA, 24h, China. */
         @NotBlank
-        String name,
+        String tipo,
 
-        @NotBlank
-        @Size(min = 3, max = 3)
-        String currency
+        @Positive
+        Integer slaEntregaHoras
 ) {
 }

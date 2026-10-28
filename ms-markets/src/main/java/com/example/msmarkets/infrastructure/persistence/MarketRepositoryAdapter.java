@@ -29,8 +29,8 @@ class MarketRepositoryAdapter implements MarketRepositoryPort {
     }
 
     @Override
-    public boolean existsByCode(String code) {
-        return jpaRepository.existsByCode(code);
+    public boolean existsByMarcaAndTipo(String marca, String tipo) {
+        return jpaRepository.existsByMarcaAndTipo(marca, tipo);
     }
 
     @Override
@@ -43,9 +43,9 @@ class MarketRepositoryAdapter implements MarketRepositoryPort {
     private Market toDomain(MarketJpaEntity entity) {
         return Market.builder()
                 .id(entity.getId())
-                .code(entity.getCode())
-                .name(entity.getName())
-                .currency(entity.getCurrency())
+                .marca(entity.getMarca())
+                .tipo(entity.getTipo())
+                .slaEntregaHoras(entity.getSlaEntregaHoras())
                 .active(entity.isActive())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
@@ -55,9 +55,9 @@ class MarketRepositoryAdapter implements MarketRepositoryPort {
     private MarketJpaEntity toEntity(Market market) {
         return MarketJpaEntity.builder()
                 .id(market.getId())
-                .code(market.getCode())
-                .name(market.getName())
-                .currency(market.getCurrency())
+                .marca(market.getMarca())
+                .tipo(market.getTipo())
+                .slaEntregaHoras(market.getSlaEntregaHoras())
                 .active(market.isActive())
                 .createdAt(market.getCreatedAt())
                 .updatedAt(market.getUpdatedAt())

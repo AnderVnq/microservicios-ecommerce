@@ -6,9 +6,9 @@ import java.time.Instant;
 
 public record MarketResponse(
         Long id,
-        String code,
-        String name,
-        String currency,
+        String marca,
+        String tipo,
+        Integer slaEntregaHoras,
         boolean active,
         Instant createdAt,
         Instant updatedAt
@@ -16,9 +16,9 @@ public record MarketResponse(
     public static MarketResponse from(Market market) {
         return new MarketResponse(
                 market.getId(),
-                market.getCode(),
-                market.getName(),
-                market.getCurrency(),
+                market.getMarca(),
+                market.getTipo(),
+                market.getSlaEntregaHoras(),
                 market.isActive(),
                 market.getCreatedAt(),
                 market.getUpdatedAt()

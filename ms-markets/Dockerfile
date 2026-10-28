@@ -7,6 +7,7 @@ COPY api-gateway/pom.xml api-gateway/pom.xml
 COPY ms-markets/pom.xml ms-markets/pom.xml
 COPY ms-clientes/pom.xml ms-clientes/pom.xml
 COPY ms-pedidos/pom.xml ms-pedidos/pom.xml
+COPY ms_auth/pom.xml ms_auth/pom.xml
 RUN mvn -q -pl ms-markets -am dependency:go-offline
 
 COPY ms-markets/src ms-markets/src

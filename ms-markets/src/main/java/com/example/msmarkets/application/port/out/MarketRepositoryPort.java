@@ -15,7 +15,7 @@ public interface MarketRepositoryPort {
 
     Optional<Market> findById(Long id);
 
-    boolean existsByCode(String code);
+    boolean existsByMarcaAndTipo(String marca, String tipo);
 
     Market save(Market market);
 }

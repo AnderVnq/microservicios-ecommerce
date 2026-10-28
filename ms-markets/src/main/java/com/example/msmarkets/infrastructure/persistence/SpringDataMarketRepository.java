@@ -4,5 +4,5 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 interface SpringDataMarketRepository extends JpaRepository<MarketJpaEntity, Long> {
 
-    boolean existsByCode(String code);
+    boolean existsByMarcaAndTipo(String marca, String tipo);
 }

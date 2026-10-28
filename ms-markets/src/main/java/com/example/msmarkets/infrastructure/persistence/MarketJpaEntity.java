@@ -10,7 +10,7 @@ import lombok.Setter;
 import java.time.Instant;
 
 @Entity
-@Table(name = "markets", uniqueConstraints = @UniqueConstraint(columnNames = "code"))
+@Table(name = "markets", uniqueConstraints = @UniqueConstraint(columnNames = {"marca", "tipo"}))
 @Getter
 @Setter
 @NoArgsConstructor
@@ -22,14 +22,14 @@ public class MarketJpaEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 10)
-    private String code;
+    @Column(nullable = false, length = 60)
+    private String marca;
 
-    @Column(nullable = false)
-    private String name;
+    @Column(nullable = false, length = 60)
+    private String tipo;
 
-    @Column(nullable = false, length = 3)
-    private String currency;
+    @Column(name = "sla_entrega_horas")
+    private Integer slaEntregaHoras;
 
     @Column(nullable = false)
     private boolean active;

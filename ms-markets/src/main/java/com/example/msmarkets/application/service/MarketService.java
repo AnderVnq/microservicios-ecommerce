@@ -35,18 +35,18 @@ public class MarketService implements MarketUseCase {
 
     @Override
     @Transactional
-    public Market create(String code, String name, String currency) {
-        if (marketRepository.existsByCode(code)) {
-            throw new MarketAlreadyExistsException(code);
+    public Market create(String marca, String tipo, Integer slaEntregaHoras) {
+        if (marketRepository.existsByMarcaAndTipo(marca, tipo)) {
+            throw new MarketAlreadyExistsException(marca, tipo);
         }
-        return marketRepository.save(Market.createNew(code, name, currency));
+        return marketRepository.save(Market.createNew(marca, tipo, slaEntregaHoras));
     }
 
     @Override
     @Transactional
-    public Market update(Long id, String code, String name, String currency) {
+    public Market update(Long id, String marca, String tipo, Integer slaEntregaHoras) {
         Market market = findById(id);
-        market.rename(code, name, currency);
+        market.actualizar(marca, tipo, slaEntregaHoras);
         return marketRepository.save(market);
     }
 

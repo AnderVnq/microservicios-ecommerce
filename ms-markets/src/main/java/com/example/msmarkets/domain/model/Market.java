@@ -10,6 +10,10 @@ import java.time.Instant;
 /**
  * Modelo de dominio puro: sin anotaciones de persistencia ni de framework web.
  * El mapeo a tabla vive en infrastructure.persistence.MarketJpaEntity.
+ *
+ * Un Market es una variante/canal de venta dentro de una misma marca
+ * (ej: marca="Falabella", tipo="Express"/"USA"/"24h"/"China"). La marca se
+ * repite entre varios Market; lo que cambia por tipo es el SLA de entrega.
  */
 @Getter
 @Setter
@@ -18,18 +22,18 @@ import java.time.Instant;
 public class Market {
 
     private Long id;
-    private String code;
-    private String name;
-    private String currency;
+    private String marca;
+    private String tipo;
+    private Integer slaEntregaHoras;
     private boolean active;
     private Instant createdAt;
     private Instant updatedAt;
 
-    public static Market createNew(String code, String name, String currency) {
+    public static Market createNew(String marca, String tipo, Integer slaEntregaHoras) {
         return Market.builder()
-                .code(code)
-                .name(name)
-                .currency(currency)
+                .marca(marca)
+                .tipo(tipo)
+                .slaEntregaHoras(slaEntregaHoras)
                 .active(true)
                 .build();
     }
@@ -38,9 +42,9 @@ public class Market {
         this.active = false;
     }
 
-    public void rename(String code, String name, String currency) {
-        this.code = code;
-        this.name = name;
-        this.currency = currency;
+    public void actualizar(String marca, String tipo, Integer slaEntregaHoras) {
+        this.marca = marca;
+        this.tipo = tipo;
+        this.slaEntregaHoras = slaEntregaHoras;
     }
 }

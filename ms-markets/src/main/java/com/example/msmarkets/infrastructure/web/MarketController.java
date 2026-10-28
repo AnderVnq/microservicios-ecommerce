@@ -32,12 +32,12 @@ public class MarketController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public MarketResponse create(@Valid @RequestBody MarketRequest request) {
-        return MarketResponse.from(marketUseCase.create(request.code(), request.name(), request.currency()));
+        return MarketResponse.from(marketUseCase.create(request.marca(), request.tipo(), request.slaEntregaHoras()));
     }
 
     @PutMapping("/{id}")
     public MarketResponse update(@PathVariable Long id, @Valid @RequestBody MarketRequest request) {
-        return MarketResponse.from(marketUseCase.update(id, request.code(), request.name(), request.currency()));
+        return MarketResponse.from(marketUseCase.update(id, request.marca(), request.tipo(), request.slaEntregaHoras()));
     }
 
     @DeleteMapping("/{id}")
