@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Entorno local / fixtures de infraestructura (no subir, contienen credenciales de dev) ###
+.env
+docker/keycloak/realm-export.json
+docker/mysql/init.sql

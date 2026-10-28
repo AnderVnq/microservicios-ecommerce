@@ -1,21 +1,8 @@
 services:
 
-  mysql:
-    image: mysql:8.4
-    container_name: microservicios-mysql
-    restart: unless-stopped
-    environment:
-      MYSQL_ROOT_PASSWORD: root
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql-data:/var/lib/mysql
-      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+  # No se levanta MySQL en Docker: los servicios se conectan a la instancia
+  # que ya corre en tu localhost (ver .env.example y docker/mysql/init.sql.example
+  # para crear las 3 bases de datos y el usuario "app" una sola vez).
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
@@ -34,6 +21,22 @@ services:
     volumes:
       - ./docker/keycloak/realm-export.json:/opt/keycloak/data/import/realm-export.json:ro
 
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: app
+      RABBITMQ_DEFAULT_PASS: app
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   ms-markets:
     build:
       context: .
@@ -41,15 +44,15 @@ services:
     container_name: ms-markets
     restart: unless-stopped
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/markets_db
-      DB_USER: app
-      DB_PASSWORD: app
+      DB_URL: jdbc:mysql://${DB_HOST:-host.docker.internal}:${DB_PORT:-3306}/markets_db
+      DB_USER: ${DB_USER:-app}
+      DB_PASSWORD: ${DB_PASSWORD:-app}
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
     ports:
       - "8081:8081"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      mysql:
-        condition: service_healthy
       keycloak:
         condition: service_started
 
@@ -60,17 +63,22 @@ services:
     container_name: ms-clientes
     restart: unless-stopped
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/clientes_db
-      DB_USER: app
-      DB_PASSWORD: app
+      DB_URL: jdbc:mysql://${DB_HOST:-host.docker.internal}:${DB_PORT:-3306}/clientes_db
+      DB_USER: ${DB_USER:-app}
+      DB_PASSWORD: ${DB_PASSWORD:-app}
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: app
+      RABBITMQ_PASSWORD: app
     ports:
       - "8082:8082"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      mysql:
-        condition: service_healthy
       keycloak:
         condition: service_started
+      rabbitmq:
+        condition: service_healthy
 
   ms-pedidos:
     build:
@@ -79,20 +87,22 @@ services:
     container_name: ms-pedidos
     restart: unless-stopped
     environment:
-      DB_URL: jdbc:mysql://mysql:3306/pedidos_db
-      DB_USER: app
-      DB_PASSWORD: app
-      CLIENTES_SERVICE_URI: http://ms-clientes:8082
+      DB_URL: jdbc:mysql://${DB_HOST:-host.docker.internal}:${DB_PORT:-3306}/pedidos_db
+      DB_USER: ${DB_USER:-app}
+      DB_PASSWORD: ${DB_PASSWORD:-app}
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USER: app
+      RABBITMQ_PASSWORD: app
     ports:
       - "8083:8083"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      mysql:
-        condition: service_healthy
       keycloak:
         condition: service_started
-      ms-clientes:
-        condition: service_started
+      rabbitmq:
+        condition: service_healthy
 
   api-gateway:
     build:
@@ -112,6 +122,3 @@ services:
       - ms-clientes
       - ms-pedidos
       - keycloak
-
-volumes:
-  mysql-data:

@@ -1,0 +1,14 @@
+-- Copia este archivo a docker/mysql/init.sql (gitignored) y ejecutalo UNA VEZ
+-- contra tu MySQL local (no se levanta MySQL en Docker, ver docker-compose.yml):
+--   mysql -u root -p < docker/mysql/init.sql
+--
+-- Una base de datos por microservicio (database-per-service).
+CREATE DATABASE IF NOT EXISTS markets_db CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS clientes_db CHARACTER SET utf8mb4;
+CREATE DATABASE IF NOT EXISTS pedidos_db CHARACTER SET utf8mb4;
+
+CREATE USER IF NOT EXISTS 'app'@'%' IDENTIFIED BY 'AppUser_2026!';
+GRANT ALL PRIVILEGES ON markets_db.* TO 'app'@'%';
+GRANT ALL PRIVILEGES ON clientes_db.* TO 'app'@'%';
+GRANT ALL PRIVILEGES ON pedidos_db.* TO 'app'@'%';
+FLUSH PRIVILEGES;
