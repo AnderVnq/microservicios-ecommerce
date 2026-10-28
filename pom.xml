@@ -14,13 +14,14 @@
     <version>0.0.1-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>microservicios-parent</name>
-    <description>Reactor Maven multi-modulo: api-gateway + microservicios (markets, clientes, pedidos)</description>
+    <description>Reactor Maven multi-modulo: api-gateway + microservicios (markets, clientes, pedidos, auth)</description>
 
     <modules>
         <module>api-gateway</module>
         <module>ms-markets</module>
         <module>ms-clientes</module>
         <module>ms-pedidos</module>
+        <module>ms_auth</module>
     </modules>
 
     <properties>
