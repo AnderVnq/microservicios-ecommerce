@@ -29,6 +29,11 @@ class InventoryEntryRepositoryAdapter implements InventoryEntryRepositoryPort {
     }
 
     @Override
+    public Optional<InventoryEntry> findByPurchaseId(Long purchaseId) {
+        return repository.findByPurchaseId(purchaseId).map(this::toDomain);
+    }
+
+    @Override
     public boolean existsOtherWithInvoice(String invoiceNumber) {
         return unitRepository.existsByInvoiceNumber(invoiceNumber);
     }
@@ -41,6 +46,8 @@ class InventoryEntryRepositoryAdapter implements InventoryEntryRepositoryPort {
                 .entryType(e.getEntryType())
                 .quantity(e.getQuantity())
                 .performedBy(e.getPerformedBy())
+                .purchaseId(e.getPurchaseId())
+                .supplierId(e.getSupplierId())
                 .createdAt(e.getCreatedAt())
                 .build();
     }
@@ -53,6 +60,8 @@ class InventoryEntryRepositoryAdapter implements InventoryEntryRepositoryPort {
                 .entryType(e.getEntryType())
                 .quantity(e.getQuantity())
                 .performedBy(e.getPerformedBy())
+                .purchaseId(e.getPurchaseId())
+                .supplierId(e.getSupplierId())
                 .createdAt(e.getCreatedAt())
                 .build();
     }

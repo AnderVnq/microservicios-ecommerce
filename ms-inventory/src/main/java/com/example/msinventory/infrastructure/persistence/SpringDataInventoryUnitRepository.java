@@ -18,6 +18,10 @@ interface SpringDataInventoryUnitRepository extends JpaRepository<InventoryUnitJ
     @Query("select u from InventoryUnitJpaEntity u where u.id = :id")
     Optional<InventoryUnitJpaEntity> findForUpdate(@Param("id") Long id);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select u from InventoryUnitJpaEntity u where u.purchaseId = :purchaseId order by u.id asc")
+    List<InventoryUnitJpaEntity> findByPurchaseIdForUpdate(@Param("purchaseId") Long purchaseId);
+
     List<InventoryUnitJpaEntity> findByEntryIdOrderByIdAsc(Long entryId);
 
     Optional<InventoryUnitJpaEntity> findByAllocatedOrderItemId(Long orderItemId);

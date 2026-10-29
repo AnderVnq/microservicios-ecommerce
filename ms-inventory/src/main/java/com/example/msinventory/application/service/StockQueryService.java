@@ -53,12 +53,15 @@ public class StockQueryService implements StockQueryUseCase {
                 continue;
             }
             long[] c = counts.computeIfAbsent(new Key(u.getSku(), u.getConditionCode(), u.getWarehouse()),
-                    k -> new long[2]);
+                    k -> new long[3]);
             c[s == InventoryUnitStatus.IN_TRANSIT ? 0 : 1]++;
+            if (s == InventoryUnitStatus.IN_TRANSIT && u.getAllocatedOrderItemId() != null) {
+                c[2]++;
+            }
         }
         return counts.entrySet().stream()
                 .map(e -> new StockRow(e.getKey().sku(), e.getKey().conditionCode(), e.getKey().warehouse(),
-                        e.getValue()[0], e.getValue()[1], e.getValue()[0] + e.getValue()[1]))
+                        e.getValue()[0], e.getValue()[1], e.getValue()[0] + e.getValue()[1], e.getValue()[2]))
                 .toList();
     }
 

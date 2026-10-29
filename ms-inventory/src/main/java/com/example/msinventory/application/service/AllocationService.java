@@ -53,6 +53,18 @@ public class AllocationService implements AllocationUseCase {
             if (unit.getStatus() == InventoryUnitStatus.AVAILABLE && unit.getAllocatedOrderItemId() == null) {
                 return;
             }
+            if (unit.getStatus() == InventoryUnitStatus.NOT_RECEIVED && unit.getAllocatedOrderItemId() == null) {
+                return; // la reserva ya se limpio al marcar no recibido
+            }
+            if (unit.getStatus() == InventoryUnitStatus.IN_TRANSIT) {
+                // Reserva de una compra en transito: se libera la reserva; sin reserva es un no-op.
+                if (unit.releaseReservation(orderItemId)) {
+                    units.save(unit);
+                    recorder.record(unit, MovementType.RESERVATION_RELEASED, null, unit.getWarehouse(),
+                            reference(orderItemId), null, actorProvider.currentActor());
+                }
+                return;
+            }
             unit.release(orderItemId);
             units.save(unit);
             recorder.record(unit, MovementType.ALLOCATION_RELEASED, null, unit.getWarehouse(),

@@ -3,6 +3,7 @@ package com.example.msinventory.application.service;
 import com.example.msinventory.application.port.in.AllocationUseCase;
 import com.example.msinventory.application.port.in.InventoryEntryUseCase;
 import com.example.msinventory.application.port.in.InventoryUnitUseCase;
+import com.example.msinventory.application.port.in.KardexLine;
 import com.example.msinventory.application.port.in.KardexReport;
 import com.example.msinventory.application.port.in.RegisterEntryCommand;
 import com.example.msinventory.application.port.in.StockQueryUseCase;
@@ -32,6 +33,7 @@ class StockQueryServiceTest {
     @Autowired InventoryEntryUseCase entryService;
     @Autowired InventoryUnitUseCase unitService;
     @Autowired AllocationUseCase allocationService;
+    @Autowired com.example.msinventory.application.port.in.PurchaseEntryUseCase purchaseService;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean ActorProvider actorProvider;
 
@@ -44,6 +46,7 @@ class StockQueryServiceTest {
 
     @AfterEach
     void cleanup() {
+        jdbc.update("delete from purchase_operations");
         jdbc.update("delete from inventory_movements");
         jdbc.update("delete from inventory_units");
         jdbc.update("delete from inventory_entries");
@@ -75,13 +78,13 @@ class StockQueryServiceTest {
         List<StockRow> all = service.stock(null, null, null);
 
         assertThat(all).containsExactly(
-                new StockRow("SKU-1", "NEW", Warehouse.USA, 2, 1, 3),
-                new StockRow("SKU-1", "USED", Warehouse.LIMA, 0, 1, 1),
-                new StockRow("SKU-2", "NEW", Warehouse.USA, 0, 1, 1));
+                new StockRow("SKU-1", "NEW", Warehouse.USA, 2, 1, 3, 0),
+                new StockRow("SKU-1", "USED", Warehouse.LIMA, 0, 1, 1, 0),
+                new StockRow("SKU-2", "NEW", Warehouse.USA, 0, 1, 1, 0));
         assertThat(service.stock("SKU-1", Warehouse.USA, "NEW"))
-                .containsExactly(new StockRow("SKU-1", "NEW", Warehouse.USA, 2, 1, 3));
+                .containsExactly(new StockRow("SKU-1", "NEW", Warehouse.USA, 2, 1, 3, 0));
         assertThat(service.stock("SKU-1", Warehouse.LIMA, null))
-                .containsExactly(new StockRow("SKU-1", "USED", Warehouse.LIMA, 0, 1, 1));
+                .containsExactly(new StockRow("SKU-1", "USED", Warehouse.LIMA, 0, 1, 1, 0));
     }
 
     @Test
@@ -193,5 +196,43 @@ class StockQueryServiceTest {
                 .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> service.kardex(null, null, null, null, null, null))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private List<Long> purchase(int quantity, List<Long> reservations) {
+        return purchaseService.create("p-" + (keySeq++), "h", new com.example.msinventory.application.port.in
+                        .PurchaseEntryUseCase.CreatePurchaseEntryCommand(900L, 3L, "SKU-9", "NEW", quantity,
+                        new BigDecimal("10.00"), null, LocalDate.now().plusDays(5), reservations))
+                .units().stream().map(InventoryUnit::getId).toList();
+    }
+
+    @Test
+    void stock_reservedInTransitCounted() {
+        List<Long> ids = purchase(3, List.of(1L, 2L));
+
+        assertThat(service.stock("SKU-9", null, null)).containsExactly(
+                new StockRow("SKU-9", "NEW", Warehouse.USA, 3, 0, 3, 2));
+
+        allocationService.release(ids.get(0), 1L);
+        purchaseService.markNotReceived("nr", "h", 900L, 1, List.of(2L), "x");
+
+        assertThat(service.stock("SKU-9", null, null)).containsExactly(
+                new StockRow("SKU-9", "NEW", Warehouse.USA, 2, 0, 2, 0));
+    }
+
+    @Test
+    void kardex_notReceivedIsOut() {
+        purchase(2, List.of(1L));
+        purchaseService.registerArrivals("arr", "h", 900L, 1, List.of(1L));
+        purchaseService.markNotReceived("nr", "h", 900L, 1, List.of(), "perdida");
+
+        KardexReport k = service.kardex("SKU-9", null, null, null, null, LocalDate.now(java.time.ZoneOffset.UTC));
+
+        assertThat(k.lines()).extracting(KardexLine::type).containsExactly(
+                MovementType.ENTRY_SUPPLIER_PURCHASE, MovementType.ENTRY_SUPPLIER_PURCHASE, MovementType.ARRIVAL,
+                MovementType.EXIT_ORDER_ALLOCATION, MovementType.EXIT_NOT_RECEIVED);
+        assertThat(k.lines().get(2).quantityIn()).isZero();
+        assertThat(k.lines().get(2).quantityOut()).isZero();
+        assertThat(k.lines().get(4).quantityOut()).isEqualTo(1);
+        assertThat(k.closingQuantity()).isZero();
     }
 }

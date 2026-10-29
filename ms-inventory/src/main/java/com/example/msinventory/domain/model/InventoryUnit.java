@@ -3,6 +3,7 @@ package com.example.msinventory.domain.model;
 import com.example.msinventory.domain.exception.AllocationConflictException;
 import com.example.msinventory.domain.exception.InvalidUnitTransitionException;
 import com.example.msinventory.domain.exception.SkuMismatchException;
+import com.example.msinventory.domain.exception.UsePurchaseFlowException;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -33,6 +34,7 @@ public class InventoryUnit {
     private LocalDate supplierReturnDeadline;
     private Long allocatedOrderItemId;
     private Long entryId;
+    private Long purchaseId;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -41,6 +43,16 @@ public class InventoryUnit {
                                         EntryType entryType, String invoiceNumber, String supplierPurchaseId,
                                         String sourceReference, LocalDate expectedArrivalDate,
                                         LocalDate supplierReturnDeadline, Long entryId) {
+        return newUnit(sku, conditionCode, warehouse, status, unitCost, costCurrency, entryType, invoiceNumber,
+                supplierPurchaseId, sourceReference, expectedArrivalDate, supplierReturnDeadline, entryId, null, null);
+    }
+
+    public static InventoryUnit newUnit(String sku, String conditionCode, Warehouse warehouse,
+                                        InventoryUnitStatus status, BigDecimal unitCost, String costCurrency,
+                                        EntryType entryType, String invoiceNumber, String supplierPurchaseId,
+                                        String sourceReference, LocalDate expectedArrivalDate,
+                                        LocalDate supplierReturnDeadline, Long entryId,
+                                        Long supplierId, Long purchaseId) {
         if (status != InventoryUnitStatus.IN_TRANSIT && status != InventoryUnitStatus.AVAILABLE) {
             throw new IllegalArgumentException("Una unidad nueva solo puede iniciar EN TRANSITO o DISPONIBLE");
         }
@@ -62,6 +74,8 @@ public class InventoryUnit {
                 .expectedArrivalDate(expectedArrivalDate)
                 .supplierReturnDeadline(supplierReturnDeadline)
                 .entryId(entryId)
+                .supplierId(supplierId)
+                .purchaseId(purchaseId)
                 .arrivedAt(status == InventoryUnitStatus.AVAILABLE ? now : null)
                 .createdAt(now)
                 .updatedAt(now)
@@ -70,6 +84,7 @@ public class InventoryUnit {
 
     /** @return true si cambio de estado; false si ya estaba disponible (idempotente). */
     public boolean arrive() {
+        requireNotUnarrivedPurchaseUnit();
         if (status == InventoryUnitStatus.AVAILABLE) {
             return false;
         }
@@ -84,6 +99,7 @@ public class InventoryUnit {
 
     /** @return el almacen de origen. */
     public Warehouse transferTo(Warehouse to, LocalDate expectedArrival) {
+        requireNotUnarrivedPurchaseUnit();
         if (to == null || expectedArrival == null) {
             throw new IllegalArgumentException("El almacen destino y la fecha estimada de llegada son obligatorios");
         }
@@ -128,6 +144,9 @@ public class InventoryUnit {
 
     /** @return true si cambio de estado; false si ya estaba en el estado destino (idempotente). */
     public boolean exit(InventoryUnitStatus target) {
+        if (target == InventoryUnitStatus.WRITTEN_OFF) {
+            requireNotUnarrivedPurchaseUnit();
+        }
         if (target != InventoryUnitStatus.RETURNED_TO_SUPPLIER
                 && target != InventoryUnitStatus.WRITTEN_OFF
                 && target != InventoryUnitStatus.ADJUSTED_OUT) {
@@ -142,6 +161,77 @@ public class InventoryUnit {
         status = target;
         touch();
         return true;
+    }
+
+    /** Unidad de compra a proveedor que aun no llega (en transito). */
+    public boolean isUnarrivedPurchaseUnit() {
+        return entryType == EntryType.SUPPLIER_PURCHASE && status == InventoryUnitStatus.IN_TRANSIT;
+    }
+
+    /** Reserva la unidad en transito para un item de pedido; idempotente para el mismo item. */
+    public void reserve(Long orderItemId) {
+        if (orderItemId == null) {
+            throw new IllegalArgumentException("El item de pedido es obligatorio para reservar");
+        }
+        if (!isUnarrivedPurchaseUnit()) {
+            throw new InvalidUnitTransitionException("Solo una unidad de compra en transito puede reservarse");
+        }
+        if (allocatedOrderItemId != null) {
+            if (allocatedOrderItemId.equals(orderItemId)) {
+                return;
+            }
+            throw new AllocationConflictException("La unidad ya esta reservada para otro item de pedido");
+        }
+        allocatedOrderItemId = orderItemId;
+        touch();
+    }
+
+    /** @return true si libero la reserva; false si no estaba reservada. */
+    public boolean releaseReservation(Long orderItemId) {
+        if (status != InventoryUnitStatus.IN_TRANSIT || allocatedOrderItemId == null) {
+            return false;
+        }
+        if (!allocatedOrderItemId.equals(orderItemId)) {
+            throw new AllocationConflictException("La unidad esta reservada para otro item de pedido");
+        }
+        allocatedOrderItemId = null;
+        touch();
+        return true;
+    }
+
+    /** @return true si cambio de estado; false si la unidad de compra ya habia llegado (idempotente). */
+    public boolean arriveFromPurchase() {
+        if (!isUnarrivedPurchaseUnit()) {
+            if (entryType == EntryType.SUPPLIER_PURCHASE && arrivedAt != null
+                    && (status == InventoryUnitStatus.AVAILABLE || status == InventoryUnitStatus.ALLOCATED)) {
+                return false;
+            }
+            throw new InvalidUnitTransitionException("La unidad no es una compra de proveedor en transito: " + status);
+        }
+        status = allocatedOrderItemId != null ? InventoryUnitStatus.ALLOCATED : InventoryUnitStatus.AVAILABLE;
+        arrivedAt = Instant.now();
+        touch();
+        return true;
+    }
+
+    /** @return true si cambio de estado; false si ya estaba NOT_RECEIVED (idempotente). */
+    public boolean markNotReceived() {
+        if (status == InventoryUnitStatus.NOT_RECEIVED) {
+            return false;
+        }
+        if (!isUnarrivedPurchaseUnit()) {
+            throw invalidTransition(InventoryUnitStatus.NOT_RECEIVED);
+        }
+        status = InventoryUnitStatus.NOT_RECEIVED;
+        allocatedOrderItemId = null;
+        touch();
+        return true;
+    }
+
+    private void requireNotUnarrivedPurchaseUnit() {
+        if (isUnarrivedPurchaseUnit()) {
+            throw new UsePurchaseFlowException("La unidad es de una compra a proveedor en transito: use el flujo de compras");
+        }
     }
 
     public void updateDates(LocalDate expectedArrivalDate, LocalDate supplierReturnDeadline) {

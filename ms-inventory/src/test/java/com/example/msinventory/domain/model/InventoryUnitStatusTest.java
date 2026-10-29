@@ -13,12 +13,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InventoryUnitStatusTest {
 
     private static final Map<InventoryUnitStatus, Set<InventoryUnitStatus>> SUCCESSORS = Map.ofEntries(
-            Map.entry(IN_TRANSIT, EnumSet.of(AVAILABLE, WRITTEN_OFF)),
+            Map.entry(IN_TRANSIT, EnumSet.of(AVAILABLE, WRITTEN_OFF, NOT_RECEIVED)),
             Map.entry(AVAILABLE, EnumSet.of(IN_TRANSIT, ALLOCATED, RETURNED_TO_SUPPLIER, WRITTEN_OFF, ADJUSTED_OUT)),
             Map.entry(ALLOCATED, EnumSet.of(AVAILABLE)),
             Map.entry(RETURNED_TO_SUPPLIER, EnumSet.noneOf(InventoryUnitStatus.class)),
             Map.entry(WRITTEN_OFF, EnumSet.noneOf(InventoryUnitStatus.class)),
-            Map.entry(ADJUSTED_OUT, EnumSet.noneOf(InventoryUnitStatus.class)));
+            Map.entry(ADJUSTED_OUT, EnumSet.noneOf(InventoryUnitStatus.class)),
+            Map.entry(NOT_RECEIVED, EnumSet.noneOf(InventoryUnitStatus.class)));
 
     @ParameterizedTest
     @EnumSource(InventoryUnitStatus.class)

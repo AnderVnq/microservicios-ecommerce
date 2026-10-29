@@ -22,7 +22,8 @@ import java.time.LocalDate;
         indexes = {
                 @Index(name = "idx_inventory_units_sku_status_wh", columnList = "sku, status, warehouse"),
                 @Index(name = "idx_inventory_units_entry", columnList = "entry_id"),
-                @Index(name = "idx_inventory_units_invoice", columnList = "invoice_number")
+                @Index(name = "idx_inventory_units_invoice", columnList = "invoice_number"),
+                @Index(name = "idx_inventory_units_purchase", columnList = "purchase_id")
         })
 @Getter
 @Setter
@@ -71,6 +72,9 @@ public class InventoryUnitJpaEntity {
 
     @Column(name = "supplier_id")
     private Long supplierId;
+
+    @Column(name = "purchase_id")
+    private Long purchaseId;
 
     @Column(name = "source_reference")
     private String sourceReference;

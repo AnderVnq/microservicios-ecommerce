@@ -10,6 +10,8 @@ public interface InventoryEntryRepositoryPort {
 
     Optional<InventoryEntry> findByIdempotencyKey(String idempotencyKey);
 
+    Optional<InventoryEntry> findByPurchaseId(Long purchaseId);
+
     /** La factura vive en las unidades: true si alguna unidad ya tiene ese invoice_number. */
     boolean existsOtherWithInvoice(String invoiceNumber);
 }

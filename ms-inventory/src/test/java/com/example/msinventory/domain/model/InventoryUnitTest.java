@@ -3,6 +3,7 @@ package com.example.msinventory.domain.model;
 import com.example.msinventory.domain.exception.AllocationConflictException;
 import com.example.msinventory.domain.exception.InvalidUnitTransitionException;
 import com.example.msinventory.domain.exception.SkuMismatchException;
+import com.example.msinventory.domain.exception.UsePurchaseFlowException;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -19,6 +20,11 @@ class InventoryUnitTest {
     private InventoryUnit unit(InventoryUnitStatus status, LocalDate eta) {
         return InventoryUnit.newUnit("SKU-1", "NEW", Warehouse.USA, status, new BigDecimal("10.50"), "USD",
                 EntryType.STOCK_PURCHASE, "INV-1", "AMZ-1", "ref", eta, null, 7L);
+    }
+
+    private InventoryUnit purchaseUnit() {
+        return InventoryUnit.newUnit("SKU-1", "NEW", Warehouse.USA, IN_TRANSIT, new BigDecimal("10.50"), "USD",
+                EntryType.SUPPLIER_PURCHASE, null, null, "ref", ETA, null, 7L, 3L, 99L);
     }
 
     private InventoryUnit available() {
@@ -172,5 +178,99 @@ class InventoryUnitTest {
         u.updateDates(ETA.plusDays(3), ETA.plusDays(30));
         assertThat(u.getExpectedArrivalDate()).isEqualTo(ETA.plusDays(3));
         assertThat(u.getSupplierReturnDeadline()).isEqualTo(ETA.plusDays(30));
+    }
+
+    @Test
+    void reserve_onlyInTransitPurchaseUnit() {
+        InventoryUnit u = purchaseUnit();
+        assertThat(u.isUnarrivedPurchaseUnit()).isTrue();
+        assertThat(u.getPurchaseId()).isEqualTo(99L);
+        assertThat(u.getSupplierId()).isEqualTo(3L);
+        u.reserve(5L);
+        assertThat(u.getAllocatedOrderItemId()).isEqualTo(5L);
+        assertThat(u.getStatus()).isEqualTo(IN_TRANSIT);
+        u.reserve(5L);
+        assertThat(u.getAllocatedOrderItemId()).isEqualTo(5L);
+
+        assertThatThrownBy(() -> unit(IN_TRANSIT, ETA).reserve(5L)).isInstanceOf(InvalidUnitTransitionException.class);
+        assertThatThrownBy(() -> available().reserve(5L)).isInstanceOf(InvalidUnitTransitionException.class);
+    }
+
+    @Test
+    void reserve_otherOrderItem_conflict() {
+        InventoryUnit u = purchaseUnit();
+        u.reserve(5L);
+        assertThatThrownBy(() -> u.reserve(6L)).isInstanceOf(AllocationConflictException.class);
+        assertThat(u.getAllocatedOrderItemId()).isEqualTo(5L);
+    }
+
+    @Test
+    void releaseReservation_thenFree_secondCallFalse() {
+        InventoryUnit u = purchaseUnit();
+        u.reserve(5L);
+        assertThatThrownBy(() -> u.releaseReservation(6L)).isInstanceOf(AllocationConflictException.class);
+        assertThat(u.releaseReservation(5L)).isTrue();
+        assertThat(u.getAllocatedOrderItemId()).isNull();
+        assertThat(u.releaseReservation(5L)).isFalse();
+        assertThat(u.getStatus()).isEqualTo(IN_TRANSIT);
+    }
+
+    @Test
+    void arriveFromPurchase_reservedBecomesAllocated() {
+        InventoryUnit u = purchaseUnit();
+        u.reserve(5L);
+        assertThat(u.arriveFromPurchase()).isTrue();
+        assertThat(u.getStatus()).isEqualTo(ALLOCATED);
+        assertThat(u.getAllocatedOrderItemId()).isEqualTo(5L);
+        assertThat(u.getArrivedAt()).isNotNull();
+        assertThat(u.arriveFromPurchase()).isFalse();
+        assertThat(u.getStatus()).isEqualTo(ALLOCATED);
+    }
+
+    @Test
+    void arriveFromPurchase_freeBecomesAvailable() {
+        InventoryUnit u = purchaseUnit();
+        assertThat(u.arriveFromPurchase()).isTrue();
+        assertThat(u.getStatus()).isEqualTo(AVAILABLE);
+        assertThat(u.getArrivedAt()).isNotNull();
+        assertThat(u.arriveFromPurchase()).isFalse();
+        assertThatThrownBy(() -> unit(IN_TRANSIT, ETA).arriveFromPurchase())
+                .isInstanceOf(InvalidUnitTransitionException.class);
+    }
+
+    @Test
+    void markNotReceived_clearsReservation_idempotent() {
+        InventoryUnit u = purchaseUnit();
+        u.reserve(5L);
+        assertThat(u.markNotReceived()).isTrue();
+        assertThat(u.getStatus()).isEqualTo(NOT_RECEIVED);
+        assertThat(u.getAllocatedOrderItemId()).isNull();
+        assertThat(u.markNotReceived()).isFalse();
+    }
+
+    @Test
+    void genericArriveOrWriteOff_onUnarrivedPurchaseUnit_throwsUsePurchaseFlow() {
+        InventoryUnit u = purchaseUnit();
+        assertThatThrownBy(u::arrive).isInstanceOf(UsePurchaseFlowException.class);
+        assertThatThrownBy(() -> u.exit(WRITTEN_OFF)).isInstanceOf(UsePurchaseFlowException.class);
+        assertThatThrownBy(() -> u.transferTo(Warehouse.LIMA, ETA)).isInstanceOf(UsePurchaseFlowException.class);
+        assertThat(u.getStatus()).isEqualTo(IN_TRANSIT);
+    }
+
+    @Test
+    void reserve_nullOrderItem_throwsIllegalArgument() {
+        assertThatThrownBy(() -> purchaseUnit().reserve(null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void markNotReceived_nonPurchaseUnit_throws() {
+        assertThatThrownBy(() -> unit(IN_TRANSIT, ETA).markNotReceived())
+                .isInstanceOf(InvalidUnitTransitionException.class);
+        assertThatThrownBy(() -> available().markNotReceived()).isInstanceOf(InvalidUnitTransitionException.class);
+    }
+
+    @Test
+    void releaseReservation_neverReserved_false() {
+        assertThat(purchaseUnit().releaseReservation(5L)).isFalse();
     }
 }

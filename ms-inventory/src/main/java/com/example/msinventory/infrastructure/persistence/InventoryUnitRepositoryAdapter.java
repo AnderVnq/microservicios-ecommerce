@@ -45,6 +45,11 @@ class InventoryUnitRepositoryAdapter implements InventoryUnitRepositoryPort {
     }
 
     @Override
+    public List<InventoryUnit> findByPurchaseIdForUpdate(Long purchaseId) {
+        return repository.findByPurchaseIdForUpdate(purchaseId).stream().map(this::toDomain).toList();
+    }
+
+    @Override
     public List<InventoryUnit> search(UnitFilter f) {
         return repository.search(f.sku(), f.status(), f.warehouse(), f.conditionCode(), f.returnDeadlineBefore())
                 .stream().map(this::toDomain).toList();
@@ -69,6 +74,7 @@ class InventoryUnitRepositoryAdapter implements InventoryUnitRepositoryPort {
         e.setInvoiceNumber(u.getInvoiceNumber());
         e.setSupplierPurchaseId(u.getSupplierPurchaseId());
         e.setSupplierId(u.getSupplierId());
+        e.setPurchaseId(u.getPurchaseId());
         e.setSourceReference(u.getSourceReference());
         e.setExpectedArrivalDate(u.getExpectedArrivalDate());
         e.setArrivedAt(u.getArrivedAt());
@@ -93,6 +99,7 @@ class InventoryUnitRepositoryAdapter implements InventoryUnitRepositoryPort {
                 .invoiceNumber(e.getInvoiceNumber())
                 .supplierPurchaseId(e.getSupplierPurchaseId())
                 .supplierId(e.getSupplierId())
+                .purchaseId(e.getPurchaseId())
                 .sourceReference(e.getSourceReference())
                 .expectedArrivalDate(e.getExpectedArrivalDate())
                 .arrivedAt(e.getArrivedAt())

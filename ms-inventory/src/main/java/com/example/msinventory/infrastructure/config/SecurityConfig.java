@@ -18,7 +18,7 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  * este servicio nunca confia ciegamente en que una request ya paso por el
  * gateway, por si llega directo o el gateway esta mal configurado.
  *
- * <p>Asignar/liberar unidades es una operacion interna de ms-pedidos: solo se acepta un JWT cuyo
+ * <p>Asignar/liberar unidades y las compras a proveedor (purchase-entries) son una operacion interna de ms-pedidos: solo se acepta un JWT cuyo
  * {@code azp} sea el client id de servicio configurado; cualquier otro token del realm recibe 403.
  */
 @Configuration
@@ -26,6 +26,7 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
 public class SecurityConfig {
 
     private static final String ALLOCATION_PATH = "/api/v1/inventory/units/*/allocation";
+    private static final String PURCHASE_ENTRIES_PATH = "/api/v1/inventory/purchase-entries/**";
 
     @Bean
     SecurityFilterChain filterChain(HttpSecurity http,
@@ -39,6 +40,7 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").permitAll()
                         .requestMatchers(HttpMethod.POST, ALLOCATION_PATH).access(serviceClientOnly)
                         .requestMatchers(HttpMethod.DELETE, ALLOCATION_PATH).access(serviceClientOnly)
+                        .requestMatchers(PURCHASE_ENTRIES_PATH).access(serviceClientOnly)
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth2 -> oauth2.jwt(jwt -> {}));
         return http.build();

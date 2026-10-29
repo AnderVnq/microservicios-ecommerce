@@ -35,9 +35,11 @@ class AllocationServiceTest {
     @Autowired AllocationUseCase service;
     @Autowired InventoryEntryUseCase entryService;
     @Autowired InventoryUnitUseCase unitService;
+    @Autowired com.example.msinventory.application.port.in.PurchaseEntryUseCase purchaseService;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean ActorProvider actorProvider;
     @MockitoSpyBean InventoryMovementRepositoryPort movementPort;
+    @MockitoSpyBean com.example.msinventory.application.port.out.InventoryUnitRepositoryPort unitPort;
 
     private int keySeq;
 
@@ -48,7 +50,8 @@ class AllocationServiceTest {
 
     @AfterEach
     void cleanup() {
-        org.mockito.Mockito.reset(movementPort);
+        org.mockito.Mockito.reset(movementPort, unitPort);
+        jdbc.update("delete from purchase_operations");
         jdbc.update("delete from inventory_movements");
         jdbc.update("delete from inventory_units");
         jdbc.update("delete from inventory_entries");
@@ -228,6 +231,62 @@ class AllocationServiceTest {
         assertThatThrownBy(() -> service.allocate(id, 7L, "SKU-1")).isSameAs(boom);
 
         org.mockito.Mockito.reset(movementPort);
+        assertThat(unitService.findOne(id).getStatus()).isEqualTo(InventoryUnitStatus.AVAILABLE);
+    }
+
+    private List<Long> purchase(int quantity, List<Long> reservations) {
+        return purchaseService.create("p-" + (keySeq++), "h", new com.example.msinventory.application.port.in
+                        .PurchaseEntryUseCase.CreatePurchaseEntryCommand(900L, 3L, "SKU-1", "NEW", quantity,
+                        new BigDecimal("12.50"), null, LocalDate.now().plusDays(5), reservations))
+                .units().stream().map(InventoryUnit::getId).toList();
+    }
+
+    @Test
+    void release_inTransitReservation_204_reservationReleasedMovement() {
+        List<Long> ids = purchase(2, List.of(7L));
+
+        service.release(ids.get(0), 7L);
+
+        InventoryUnit u = unitService.findOne(ids.get(0));
+        assertThat(u.getStatus()).isEqualTo(InventoryUnitStatus.IN_TRANSIT);
+        assertThat(u.getAllocatedOrderItemId()).isNull();
+        assertThat(count(ids.get(0), MovementType.RESERVATION_RELEASED)).isEqualTo(1);
+        assertThat(movs(ids.get(0)).get(1).reference()).isEqualTo("order-item:7");
+        // sin reserva (y repetido): no-op
+        service.release(ids.get(0), 7L);
+        service.release(ids.get(1), 7L);
+        assertThat(count(ids.get(0), MovementType.RESERVATION_RELEASED)).isEqualTo(1);
+        assertThat(count(ids.get(1), MovementType.RESERVATION_RELEASED)).isZero();
+    }
+
+    @Test
+    void release_inTransitReservedForOtherItem_conflict() {
+        List<Long> ids = purchase(1, List.of(7L));
+        assertThatThrownBy(() -> service.release(ids.get(0), 8L)).isInstanceOf(AllocationConflictException.class);
+    }
+
+    @Test
+    void release_notReceivedUnit_noop() {
+        List<Long> ids = purchase(1, List.of(7L));
+        purchaseService.markNotReceived("nr-rel", "h", 900L, 1, List.of(7L), "perdida");
+
+        service.release(ids.get(0), 7L);
+
+        assertThat(unitService.findOne(ids.get(0)).getStatus()).isEqualTo(InventoryUnitStatus.NOT_RECEIVED);
+        assertThat(count(ids.get(0), MovementType.RESERVATION_RELEASED)).isZero();
+    }
+
+    /** Carrera con una reserva de compra: el indice unico rechaza el update y se responde ALLOCATION_CONFLICT. */
+    @Test
+    void allocate_uniqueRaceWithPurchaseReservation_allocationConflict() {
+        List<Long> reserved = purchase(1, List.of(7L));
+        Long id = available();
+        org.mockito.Mockito.doReturn(java.util.Optional.empty()).doCallRealMethod()
+                .when(unitPort).findByAllocatedOrderItemId(7L);
+
+        assertThatThrownBy(() -> service.allocate(id, 7L, "SKU-1")).isInstanceOf(AllocationConflictException.class)
+                .hasMessageContaining("cubierto por la unidad " + reserved.get(0));
+
         assertThat(unitService.findOne(id).getStatus()).isEqualTo(InventoryUnitStatus.AVAILABLE);
     }
 }

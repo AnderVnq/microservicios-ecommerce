@@ -38,7 +38,7 @@ class StockControllerTest {
     @Test
     void stock_200() throws Exception {
         when(stock.stock("SKU-1", Warehouse.USA, null))
-                .thenReturn(List.of(new StockRow("SKU-1", "NEW", Warehouse.USA, 1, 2, 3)));
+                .thenReturn(List.of(new StockRow("SKU-1", "NEW", Warehouse.USA, 1, 2, 3, 0)));
         mvc.perform(get("/api/v1/inventory/stock").param("sku", "SKU-1").param("warehouse", "USA").with(jwt()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].inTransit").value(1))

@@ -7,6 +7,7 @@ import com.example.msinventory.application.port.out.ActorProvider;
 import com.example.msinventory.application.port.out.InventoryUnitRepositoryPort.UnitFilter;
 import com.example.msinventory.domain.exception.InvalidUnitTransitionException;
 import com.example.msinventory.domain.exception.UnitNotFoundException;
+import com.example.msinventory.domain.exception.UsePurchaseFlowException;
 import com.example.msinventory.domain.model.*;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -29,6 +30,7 @@ class InventoryUnitServiceTest {
 
     @Autowired InventoryUnitUseCase service;
     @Autowired InventoryEntryUseCase entryService;
+    @Autowired com.example.msinventory.application.port.in.PurchaseEntryUseCase purchaseService;
     @Autowired JdbcTemplate jdbc;
     @MockitoBean ActorProvider actorProvider;
 
@@ -41,6 +43,7 @@ class InventoryUnitServiceTest {
 
     @AfterEach
     void cleanup() {
+        jdbc.update("delete from purchase_operations");
         jdbc.update("delete from inventory_movements");
         jdbc.update("delete from inventory_units");
         jdbc.update("delete from inventory_entries");
@@ -302,5 +305,17 @@ class InventoryUnitServiceTest {
 
         assertThat(found).extracting(InventoryUnit::getId).containsExactly(id);
         assertThat(notFound).isEmpty();
+    }
+
+    @Test
+    void genericOpsOnInTransitPurchaseUnit_conflict() {
+        Long id = purchaseService.create("pk", "h", new com.example.msinventory.application.port.in
+                .PurchaseEntryUseCase.CreatePurchaseEntryCommand(901L, 3L, "SKU-1", "NEW", 1, new BigDecimal("5.00"),
+                null, LocalDate.now().plusDays(5), List.of())).units().get(0).getId();
+
+        assertThatThrownBy(() -> service.arrive(id)).isInstanceOf(UsePurchaseFlowException.class);
+        assertThatThrownBy(() -> service.arriveAll(List.of(id))).isInstanceOf(UsePurchaseFlowException.class);
+        assertThatThrownBy(() -> service.writeOff(id, "x")).isInstanceOf(UsePurchaseFlowException.class);
+        assertThat(service.findOne(id).getStatus()).isEqualTo(InventoryUnitStatus.IN_TRANSIT);
     }
 }

@@ -21,6 +21,9 @@ public interface InventoryUnitRepositoryPort {
 
     List<InventoryUnit> findByEntryId(Long entryId);
 
+    /** Unidades de una compra ordenadas por id, con bloqueo PESSIMISTIC_WRITE; requiere transaccion activa. */
+    List<InventoryUnit> findByPurchaseIdForUpdate(Long purchaseId);
+
     List<InventoryUnit> search(UnitFilter filter);
 
     Optional<InventoryUnit> findByAllocatedOrderItemId(Long orderItemId);

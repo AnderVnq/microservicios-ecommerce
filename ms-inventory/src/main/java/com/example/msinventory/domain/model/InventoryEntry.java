@@ -17,5 +17,7 @@ public class InventoryEntry {
     private EntryType entryType;
     private int quantity;
     private String performedBy;
+    private Long purchaseId;
+    private Long supplierId;
     private Instant createdAt;
 }

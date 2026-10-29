@@ -13,7 +13,8 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "inventory_entries", uniqueConstraints =
-        @UniqueConstraint(name = "uk_inventory_entries_idempotency_key", columnNames = "idempotency_key"))
+        {@UniqueConstraint(name = "uk_inventory_entries_idempotency_key", columnNames = "idempotency_key"),
+                @UniqueConstraint(name = "uk_inventory_entries_purchase", columnNames = "purchase_id")})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -41,6 +42,12 @@ public class InventoryEntryJpaEntity {
 
     @Column(name = "performed_by", nullable = false)
     private String performedBy;
+
+    @Column(name = "purchase_id")
+    private Long purchaseId;
+
+    @Column(name = "supplier_id")
+    private Long supplierId;
 
     @Column(name = "created_at", nullable = false)
     private Instant createdAt;

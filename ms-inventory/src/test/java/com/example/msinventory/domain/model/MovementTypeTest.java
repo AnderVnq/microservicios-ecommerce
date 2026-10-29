@@ -27,4 +27,12 @@ class MovementTypeTest {
         assertThat(ARRIVAL.direction()).isEqualTo(Direction.INTERNAL);
         assertThat(TRANSFER.direction()).isEqualTo(Direction.INTERNAL);
     }
+
+    @Test
+    void newTypesDirections() {
+        assertThat(MovementType.entryFor(EntryType.SUPPLIER_PURCHASE)).isEqualTo(ENTRY_SUPPLIER_PURCHASE);
+        assertThat(ENTRY_SUPPLIER_PURCHASE.direction()).isEqualTo(Direction.IN);
+        assertThat(EXIT_NOT_RECEIVED.direction()).isEqualTo(Direction.OUT);
+        assertThat(RESERVATION_RELEASED.direction()).isEqualTo(Direction.INTERNAL);
+    }
 }
