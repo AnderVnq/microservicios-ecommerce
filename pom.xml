@@ -21,6 +21,7 @@
         <module>ms-markets</module>
         <module>ms-clientes</module>
         <module>ms-pedidos</module>
+        <module>ms-inventory</module>
         <module>ms_auth</module>
     </modules>
 
