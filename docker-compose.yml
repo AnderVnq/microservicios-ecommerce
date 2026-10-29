@@ -2,7 +2,8 @@ services:
 
   # No se levanta MySQL en Docker: los servicios se conectan a la instancia
   # que ya corre en tu localhost (ver .env.example y docker/mysql/init.sql.example
-  # para crear las 3 bases de datos y el usuario "app" una sola vez).
+  # para crear las bases de datos markets_db, clientes_db, pedidos_db,
+  # usuarios_db e inventory_db y el usuario "app" una sola vez).
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
@@ -87,6 +88,10 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-app}
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
       CLIENTES_SERVICE_URI: http://ms-clientes:8082
+      INVENTORY_SERVICE_URI: http://ms-inventory:8085
+      AUTH_SERVICE_URI: http://ms-auth:8084
+      KEYCLOAK_TOKEN_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/token
+      PEDIDOS_CLIENT_SECRET: ${PEDIDOS_CLIENT_SECRET:-ms-pedidos-secret}
     ports:
       - "8083:8083"
     extra_hosts:
@@ -95,6 +100,29 @@ services:
       keycloak:
         condition: service_started
       ms-clientes:
+        condition: service_started
+      ms-inventory:
+        condition: service_started
+      ms-auth:
+        condition: service_started
+
+  ms-inventory:
+    build:
+      context: .
+      dockerfile: ms-inventory/Dockerfile
+    container_name: ms-inventory
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://${DB_HOST:-host.docker.internal}:${DB_PORT:-3306}/inventory_db
+      DB_USER: ${DB_USER:-app}
+      DB_PASSWORD: ${DB_PASSWORD:-app}
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
+    ports:
+      - "8085:8085"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      keycloak:
         condition: service_started
 
   ms-auth:
@@ -127,6 +155,7 @@ services:
       CLIENTES_SERVICE_URI: http://ms-clientes:8082
       PEDIDOS_SERVICE_URI: http://ms-pedidos:8083
       AUTH_SERVICE_URI: http://ms-auth:8084
+      INVENTORY_SERVICE_URI: http://ms-inventory:8085
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
     ports:
       - "8080:8080"
@@ -135,4 +164,5 @@ services:
       - ms-clientes
       - ms-pedidos
       - ms-auth
+      - ms-inventory
       - keycloak
