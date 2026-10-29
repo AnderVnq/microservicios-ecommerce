@@ -10,7 +10,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Cancela una unidad, resuelve su incidencia de importador pendiente y escribe el historial; requiere transaccion
- * y que el llamador ya tenga el lock de la orden y de la unidad.
+ * y que el llamador ya tenga el lock de la orden y de la unidad. Si la unidad sigue como la dejo una asignacion de
+ * inventario, el dominio la marca {@code inventoryReleasePending}; el llamador libera en ms-inventory despues del
+ * commit con {@link InventoryReleaser}.
  */
 @Component
 @RequiredArgsConstructor

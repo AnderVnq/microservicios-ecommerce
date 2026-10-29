@@ -4,6 +4,7 @@ import com.example.mspedidos.application.port.out.OrderItemRepositoryPort;
 import com.example.mspedidos.domain.model.ImporterDocument;
 import com.example.mspedidos.domain.model.OrderItem;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
@@ -25,6 +26,11 @@ class OrderItemRepositoryAdapter implements OrderItemRepositoryPort {
     public List<OrderItem> saveAll(List<OrderItem> items) {
         return jpaRepository.saveAll(items.stream().map(this::toEntity).toList())
                 .stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public Optional<OrderItem> findById(Long itemId) {
+        return jpaRepository.findById(itemId).map(this::toDomain);
     }
 
     @Override
@@ -54,6 +60,19 @@ class OrderItemRepositoryAdapter implements OrderItemRepositoryPort {
                 excludeItemId);
     }
 
+    @Override
+    public List<OrderItem> findReleasePending() {
+        return search(true);
+    }
+
+    @Override
+    public List<OrderItem> search(Boolean inventoryReleasePending) {
+        List<OrderItemJpaEntity> found = inventoryReleasePending == null
+                ? jpaRepository.findAll(Sort.by("id"))
+                : jpaRepository.findByInventoryReleasePendingOrderByIdAsc(inventoryReleasePending);
+        return found.stream().map(this::toDomain).toList();
+    }
+
     private OrderItem toDomain(OrderItemJpaEntity e) {
         ImporterDocument doc = e.getImporterDocumentType() == null ? null
                 : new ImporterDocument(e.getImporterDocumentType(), e.getImporterDocumentNumber());
@@ -69,6 +88,9 @@ class OrderItemRepositoryAdapter implements OrderItemRepositoryPort {
                 .importerType(e.getImporterType())
                 .familyMemberId(e.getFamilyMemberId())
                 .importerDocument(doc)
+                .inventoryUnitId(e.getInventoryUnitId())
+                .inventoryReleasePending(e.isInventoryReleasePending())
+                .pendingReleaseUnitId(e.getPendingReleaseUnitId())
                 .createdAt(e.getCreatedAt())
                 .updatedAt(e.getUpdatedAt())
                 .build();
@@ -89,6 +111,9 @@ class OrderItemRepositoryAdapter implements OrderItemRepositoryPort {
                 .familyMemberId(i.getFamilyMemberId())
                 .importerDocumentType(doc == null ? null : doc.type())
                 .importerDocumentNumber(doc == null ? null : doc.number())
+                .inventoryUnitId(i.getInventoryUnitId())
+                .inventoryReleasePending(i.isInventoryReleasePending())
+                .pendingReleaseUnitId(i.getPendingReleaseUnitId())
                 .createdAt(i.getCreatedAt())
                 .updatedAt(i.getUpdatedAt())
                 .build();

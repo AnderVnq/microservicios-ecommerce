@@ -12,6 +12,8 @@ public interface OrderItemRepositoryPort {
 
     List<OrderItem> saveAll(List<OrderItem> items);
 
+    Optional<OrderItem> findById(Long itemId);
+
     Optional<OrderItem> findByIdAndOrderId(Long itemId, Long orderId);
 
     List<OrderItem> findByOrderId(Long orderId);
@@ -28,4 +30,10 @@ public interface OrderItemRepositoryPort {
      * @param excludeItemId unidad a excluir del conteo; puede ser null
      */
     long countQuotaUnits(ImporterDocument document, int year, Long excludeItemId);
+
+    /** Unidades con {@code inventory_release_pending = true}, por id ascendente. */
+    List<OrderItem> findReleasePending();
+
+    /** Unidades filtradas por {@code inventory_release_pending}; {@code null} no filtra. Por id ascendente. */
+    List<OrderItem> search(Boolean inventoryReleasePending);
 }

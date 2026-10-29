@@ -26,6 +26,9 @@ public interface OrderItemUseCase {
     OrderItem changeStatus(Long orderId, Long itemId, OrderItemStatus status, Warehouse warehouse,
                            DeliveredTo deliveredTo);
 
+    /** Unidades filtradas por {@code inventoryReleasePending}; {@code null} no filtra. */
+    List<OrderItem> findByReleasePending(Boolean inventoryReleasePending);
+
     /** Historial cronologico de la unidad. */
     List<OrderItemHistoryEntry> history(Long orderId, Long itemId);
 }

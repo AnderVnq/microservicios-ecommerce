@@ -30,6 +30,19 @@ management:
 orders:
   importer-quota:
     max-units-per-year: 3
+  inventory-release-job:
+    delay-ms: 60000
 
 clientes:
   base-url: ${CLIENTES_SERVICE_URI:http://localhost:8082}
+
+inventory:
+  base-url: ${INVENTORY_SERVICE_URI:http://localhost:8085}
+
+auth:
+  base-url: ${AUTH_SERVICE_URI:http://localhost:8084}
+
+service-account:
+  token-uri: ${KEYCLOAK_TOKEN_URI:http://localhost:8180/realms/microservicios/protocol/openid-connect/token}
+  client-id: ${PEDIDOS_CLIENT_ID:ms-pedidos}
+  client-secret: ${PEDIDOS_CLIENT_SECRET:ms-pedidos-secret}

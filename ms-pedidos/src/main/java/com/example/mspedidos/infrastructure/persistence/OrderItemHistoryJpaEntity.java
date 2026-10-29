@@ -2,6 +2,7 @@ package com.example.mspedidos.infrastructure.persistence;
 
 import com.example.mspedidos.domain.model.HistoryEventType;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -28,7 +29,8 @@ public class OrderItemHistoryJpaEntity {
     private Long orderItemId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "event_type", nullable = false, length = 30)
+    @JdbcType(PlainVarcharJdbcType.class)
+    @Column(name = "event_type", nullable = false, length = 40)
     private HistoryEventType eventType;
 
     @Column(name = "from_value")

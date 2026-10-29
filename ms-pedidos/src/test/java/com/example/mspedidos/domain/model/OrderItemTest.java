@@ -4,6 +4,7 @@ import com.example.mspedidos.domain.exception.ImporterChangeNotAllowedException;
 import com.example.mspedidos.domain.exception.ImporterRequiredException;
 import com.example.mspedidos.domain.exception.InvalidStatusTransitionException;
 import com.example.mspedidos.domain.exception.ItemNotEditableException;
+import com.example.mspedidos.domain.exception.UndoNotAllowedException;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -153,5 +154,128 @@ class OrderItemTest {
     void importerDocumentRequiresNonBlankValues() {
         assertThatThrownBy(() -> new ImporterDocument("", "1")).isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> new ImporterDocument("DNI", null)).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    private OrderItem processingWithImporter() {
+        OrderItem item = unit();
+        item.assignHolder(DOC);
+        return item;
+    }
+
+    @Test
+    void coverFromInventory_usa_receivedAtWarehouseKeepsImporter() {
+        OrderItem item = processingWithImporter();
+        item.coverFromInventory(7L, Warehouse.USA);
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.RECEIVED_AT_WAREHOUSE);
+        assertThat(item.getWarehouse()).isEqualTo(Warehouse.USA);
+        assertThat(item.getInventoryUnitId()).isEqualTo(7L);
+        assertThat(item.getImporterType()).isEqualTo(ImporterType.HOLDER);
+        assertThat(item.getImporterDocument()).isEqualTo(DOC);
+        assertThat(item.consumesQuota()).isTrue();
+        assertThat(item.isInPostAllocationState()).isTrue();
+    }
+
+    @Test
+    void coverFromInventory_lima_receivedLimaNotRequired() {
+        OrderItem item = unit();
+        item.assignFamilyMember(3L, DOC);
+        item.coverFromInventory(8L, Warehouse.LIMA);
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.RECEIVED_LIMA);
+        assertThat(item.getWarehouse()).isEqualTo(Warehouse.LIMA);
+        assertThat(item.getImporterType()).isEqualTo(ImporterType.NOT_REQUIRED);
+        assertThat(item.getFamilyMemberId()).isNull();
+        assertThat(item.getImporterDocument()).isNull();
+        assertThat(item.consumesQuota()).isFalse();
+        assertThat(item.isInPostAllocationState()).isTrue();
+    }
+
+    @Test
+    void coverFromInventory_notProcessing_throws() {
+        OrderItem purchased = unitAt(OrderItemStatus.PURCHASED, ImporterType.HOLDER);
+        assertThatThrownBy(() -> purchased.coverFromInventory(1L, Warehouse.USA))
+                .isInstanceOf(InvalidStatusTransitionException.class);
+        OrderItem covered = processingWithImporter();
+        covered.coverFromInventory(1L, Warehouse.USA);
+        OrderItem alreadyCovered = OrderItem.builder().status(OrderItemStatus.PROCESSING)
+                .importerType(ImporterType.UNASSIGNED).inventoryUnitId(2L).build();
+        assertThatThrownBy(() -> alreadyCovered.coverFromInventory(3L, Warehouse.USA))
+                .isInstanceOf(InvalidStatusTransitionException.class);
+    }
+
+    @Test
+    void notRequired_passesStandby_andCannotBeReassigned() {
+        OrderItem item = unitAt(OrderItemStatus.RECEIVED_LIMA, ImporterType.NOT_REQUIRED);
+        item.changeStatus(OrderItemStatus.DISPATCHED, null, null);
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.DISPATCHED);
+
+        OrderItem early = unitAt(OrderItemStatus.PROCESSING, ImporterType.NOT_REQUIRED);
+        assertThat(early.consumesQuota()).isFalse();
+        assertThatThrownBy(() -> early.assignHolder(DOC)).isInstanceOf(ImporterChangeNotAllowedException.class);
+        assertThatThrownBy(() -> early.assignFamilyMember(1L, DOC))
+                .isInstanceOf(ImporterChangeNotAllowedException.class);
+    }
+
+    @Test
+    void undo_fromLima_backToProcessingUnassignedPending() {
+        OrderItem item = unit();
+        item.coverFromInventory(9L, Warehouse.LIMA);
+        Long old = item.undoInventoryCoverage();
+        assertThat(old).isEqualTo(9L);
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
+        assertThat(item.getWarehouse()).isNull();
+        assertThat(item.getInventoryUnitId()).isNull();
+        assertThat(item.isInventoryReleasePending()).isTrue();
+        assertThat(item.getPendingReleaseUnitId()).isEqualTo(9L);
+        assertThat(item.getImporterType()).isEqualTo(ImporterType.UNASSIGNED);
+
+        item.markReleased();
+        assertThat(item.isInventoryReleasePending()).isFalse();
+        assertThat(item.getPendingReleaseUnitId()).isNull();
+    }
+
+    @Test
+    void undo_fromUsa_keepsImporter() {
+        OrderItem item = processingWithImporter();
+        item.coverFromInventory(9L, Warehouse.USA);
+        item.undoInventoryCoverage();
+        assertThat(item.getImporterType()).isEqualTo(ImporterType.HOLDER);
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
+    }
+
+    @Test
+    void undo_afterAdvancing_throws() {
+        OrderItem item = processingWithImporter();
+        item.coverFromInventory(9L, Warehouse.USA);
+        item.changeStatus(OrderItemStatus.READY_TO_SHIP, null, null);
+        assertThat(item.isInPostAllocationState()).isFalse();
+        assertThatThrownBy(item::undoInventoryCoverage).isInstanceOf(UndoNotAllowedException.class);
+        assertThatThrownBy(() -> unit().undoInventoryCoverage()).isInstanceOf(UndoNotAllowedException.class);
+    }
+
+    @Test
+    void cancel_postAllocation_marksReleasePending() {
+        OrderItem item = unit();
+        item.coverFromInventory(11L, Warehouse.LIMA);
+        item.cancel();
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.CANCELLED);
+        assertThat(item.isInventoryReleasePending()).isTrue();
+        assertThat(item.getPendingReleaseUnitId()).isEqualTo(11L);
+        assertThat(item.getInventoryUnitId()).isEqualTo(11L);
+    }
+
+    @Test
+    void cancel_withoutAllocation_noReleasePending() {
+        OrderItem item = unit();
+        item.cancel();
+        assertThat(item.isInventoryReleasePending()).isFalse();
+        assertThat(item.getPendingReleaseUnitId()).isNull();
+    }
+
+    @Test
+    void coverFromInventory_nullWarehouse_throws() {
+        OrderItem item = unit();
+        assertThatThrownBy(() -> item.coverFromInventory(1L, null)).isInstanceOf(IllegalArgumentException.class);
+        assertThat(item.getInventoryUnitId()).isNull();
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
     }
 }

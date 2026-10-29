@@ -24,8 +24,11 @@ public class ItemIncident {
     private Instant resolvedAt;
 
     public static ItemIncident importerPending(Long orderItemId, String actor) {
-        return open(orderItemId, IncidentType.IMPORTER_ASSIGNMENT_PENDING, IncidentScope.EXTERNAL,
-                "Unidad excede el cupo del titular; asignar importador", actor);
+        return importerPending(orderItemId, "Unidad excede el cupo del titular; asignar importador", actor);
+    }
+
+    public static ItemIncident importerPending(Long orderItemId, String description, String actor) {
+        return open(orderItemId, IncidentType.IMPORTER_ASSIGNMENT_PENDING, IncidentScope.EXTERNAL, description, actor);
     }
 
     public static ItemIncident open(Long orderItemId, IncidentType type, IncidentScope scope,

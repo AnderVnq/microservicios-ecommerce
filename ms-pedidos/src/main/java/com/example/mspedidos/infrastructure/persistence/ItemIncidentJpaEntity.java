@@ -4,6 +4,7 @@ import com.example.mspedidos.domain.model.IncidentScope;
 import com.example.mspedidos.domain.model.IncidentStatus;
 import com.example.mspedidos.domain.model.IncidentType;
 import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -30,18 +31,21 @@ public class ItemIncidentJpaEntity {
     private Long orderItemId;
 
     @Enumerated(EnumType.STRING)
+    @JdbcType(PlainVarcharJdbcType.class)
     @Column(nullable = false, length = 40)
     private IncidentType type;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
+    @JdbcType(PlainVarcharJdbcType.class)
+    @Column(nullable = false, length = 40)
     private IncidentScope scope;
 
     @Column(columnDefinition = "text")
     private String description;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
+    @JdbcType(PlainVarcharJdbcType.class)
+    @Column(nullable = false, length = 40)
     private IncidentStatus status;
 
     @Column(name = "opened_by", nullable = false)

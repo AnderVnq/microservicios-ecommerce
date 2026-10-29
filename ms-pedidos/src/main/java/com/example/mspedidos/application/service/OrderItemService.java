@@ -4,6 +4,7 @@ import com.example.mspedidos.application.port.in.AssignImporterCommand;
 import com.example.mspedidos.application.port.in.OrderItemUseCase;
 import com.example.mspedidos.application.port.in.OrderLine;
 import com.example.mspedidos.application.port.out.ActorProvider;
+import com.example.mspedidos.application.port.out.AllocationUndoRequestRepositoryPort;
 import com.example.mspedidos.application.port.out.ClientesPort;
 import com.example.mspedidos.application.port.out.ItemIncidentRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderItemHistoryRepositoryPort;
@@ -14,6 +15,7 @@ import com.example.mspedidos.domain.exception.ImporterChangeNotAllowedException;
 import com.example.mspedidos.domain.exception.OrderItemNotFoundException;
 import com.example.mspedidos.domain.exception.OrderNotFoundException;
 import com.example.mspedidos.domain.exception.QuotaExceededException;
+import com.example.mspedidos.domain.exception.UndoRequestPendingException;
 import com.example.mspedidos.domain.model.DeliveredTo;
 import com.example.mspedidos.domain.model.HistoryEventType;
 import com.example.mspedidos.domain.model.ImporterDocument;
@@ -52,14 +54,18 @@ public class OrderItemService implements OrderItemUseCase {
     private final UnitCreator unitCreator;
     private final ItemHistoryRecorder history;
     private final ItemCanceller canceller;
+    private final InventoryReleaser releaser;
     private final OrderItemHistoryRepositoryPort historyRepository;
+    private final AllocationUndoRequestRepositoryPort undoRepository;
     private final TransactionTemplate tx;
 
     OrderItemService(OrderRepositoryPort orderRepository, OrderItemRepositoryPort itemRepository,
                      ItemIncidentRepositoryPort incidentRepository, ClientesPort clientesPort,
                      ActorProvider actorProvider, QuotaLockPort quotaLock, QuotaAllocator quotaAllocator,
                      UnitCreator unitCreator, ItemHistoryRecorder history,
-                     ItemCanceller canceller, OrderItemHistoryRepositoryPort historyRepository,
+                     ItemCanceller canceller, InventoryReleaser releaser,
+                     OrderItemHistoryRepositoryPort historyRepository,
+                     AllocationUndoRequestRepositoryPort undoRepository,
                      PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.itemRepository = itemRepository;
@@ -71,7 +77,9 @@ public class OrderItemService implements OrderItemUseCase {
         this.unitCreator = unitCreator;
         this.history = history;
         this.canceller = canceller;
+        this.releaser = releaser;
         this.historyRepository = historyRepository;
+        this.undoRepository = undoRepository;
         this.tx = new TransactionTemplate(transactionManager);
         // READ COMMITTED explicito: con REPEATABLE READ (default de InnoDB) el snapshot se fija en la primera
         // lectura, antes de esperar el lock de cupo, y el conteo posterior no veria las unidades del ganador.
@@ -112,6 +120,7 @@ public class OrderItemService implements OrderItemUseCase {
         return tx.execute(status -> {
             quotaLock.lock(doc, year);
             OrderItem item = lockItem(orderId, itemId);
+            ensureNoPendingUndo(itemId);
             String from = ItemHistoryRecorder.importerLabel(item);
             if (type == ImporterType.HOLDER) {
                 item.assignHolder(doc);
@@ -136,6 +145,11 @@ public class OrderItemService implements OrderItemUseCase {
     }
 
     @Override
+    public List<OrderItem> findByReleasePending(Boolean inventoryReleasePending) {
+        return itemRepository.search(inventoryReleasePending);
+    }
+
+    @Override
     public List<OrderItem> findByOrder(Long orderId) {
         findOrder(orderId);
         return itemRepository.findByOrderId(orderId);
@@ -153,6 +167,7 @@ public class OrderItemService implements OrderItemUseCase {
         return tx.execute(status -> {
             Order order = lockOrder(orderId);
             OrderItem item = lockItem(orderId, itemId);
+            ensureNoPendingUndo(itemId);
             String before = describe(item);
             item.updateDetails(sku, externalItemId, unitPrice);
             OrderItem saved = itemRepository.save(item);
@@ -167,9 +182,10 @@ public class OrderItemService implements OrderItemUseCase {
     public OrderItem changeStatus(Long orderId, Long itemId, OrderItemStatus next, Warehouse warehouse,
                                   DeliveredTo deliveredTo) {
         String actor = actorProvider.currentActor();
-        return tx.execute(status -> {
+        OrderItem result = tx.execute(status -> {
             Order order = lockOrder(orderId);
             OrderItem item = lockItem(orderId, itemId);
+            ensureNoPendingUndo(itemId);
             OrderItem saved;
             if (next == OrderItemStatus.CANCELLED) {
                 saved = canceller.cancel(item, actor);
@@ -183,6 +199,8 @@ public class OrderItemService implements OrderItemUseCase {
             }
             return saved;
         });
+        // cancelacion ya confirmada: se libera la unidad de inventario fuera de la transaccion (nunca falla)
+        return next == OrderItemStatus.CANCELLED ? releaser.release(result, actor) : result;
     }
 
     @Override
@@ -194,6 +212,14 @@ public class OrderItemService implements OrderItemUseCase {
     /** Resumen corto de los campos editables: {@code sku/externalItemId/unitPrice}. */
     private static String describe(OrderItem item) {
         return item.getSku() + "/" + item.getExternalItemId() + "/" + item.getUnitPrice();
+    }
+
+    /** Con una solicitud de deshacer pendiente la unidad queda congelada (spec 10.2c-2); llamar con su lock tomado. */
+    private void ensureNoPendingUndo(Long itemId) {
+        undoRepository.findPendingByOrderItemId(itemId).ifPresent(pending -> {
+            throw new UndoRequestPendingException("La unidad " + itemId
+                    + " tiene una solicitud de deshacer asignacion pendiente: " + pending.getId());
+        });
     }
 
     private OrderItem findItem(Long orderId, Long itemId) {

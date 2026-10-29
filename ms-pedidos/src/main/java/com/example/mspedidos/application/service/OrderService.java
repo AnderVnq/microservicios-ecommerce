@@ -4,11 +4,13 @@ import com.example.mspedidos.application.port.in.CreateOrderCommand;
 import com.example.mspedidos.application.port.in.OrderUseCase;
 import com.example.mspedidos.application.port.in.OrderView;
 import com.example.mspedidos.application.port.out.ActorProvider;
+import com.example.mspedidos.application.port.out.AllocationUndoRequestRepositoryPort;
 import com.example.mspedidos.application.port.out.ClientesPort;
 import com.example.mspedidos.application.port.out.OrderItemRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderRepositoryPort;
 import com.example.mspedidos.domain.exception.DuplicateExternalOrderException;
 import com.example.mspedidos.domain.exception.OrderNotFoundException;
+import com.example.mspedidos.domain.exception.UndoRequestPendingException;
 import com.example.mspedidos.domain.model.Order;
 import com.example.mspedidos.domain.model.OrderHeaderChanges;
 import com.example.mspedidos.domain.model.OrderItem;
@@ -32,10 +34,13 @@ public class OrderService implements OrderUseCase {
     private final UnitCreator unitCreator;
     private final OrderItemRepositoryPort itemRepository;
     private final ItemCanceller canceller;
+    private final InventoryReleaser releaser;
+    private final AllocationUndoRequestRepositoryPort undoRepository;
     private final TransactionTemplate tx;
 
     OrderService(OrderRepositoryPort orderRepository, ClientesPort clientesPort, ActorProvider actorProvider,
                  UnitCreator unitCreator, OrderItemRepositoryPort itemRepository, ItemCanceller canceller,
+                 InventoryReleaser releaser, AllocationUndoRequestRepositoryPort undoRepository,
                  PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.clientesPort = clientesPort;
@@ -43,6 +48,8 @@ public class OrderService implements OrderUseCase {
         this.unitCreator = unitCreator;
         this.itemRepository = itemRepository;
         this.canceller = canceller;
+        this.releaser = releaser;
+        this.undoRepository = undoRepository;
         this.tx = new TransactionTemplate(transactionManager);
         // READ COMMITTED explicito: con REPEATABLE READ (default de InnoDB) el snapshot se fija en la primera
         // lectura, antes de esperar el lock de cupo, y el conteo posterior no veria las unidades del ganador.
@@ -92,14 +99,23 @@ public class OrderService implements OrderUseCase {
     @Override
     public OrderView cancel(Long id) {
         String actor = actorProvider.currentActor();
-        return tx.execute(status -> {
+        OrderView cancelled = tx.execute(status -> {
             Order order = lockOrder(id);
-            List<OrderItem> items = itemRepository.findByOrderIdForUpdate(id).stream()
+            List<OrderItem> locked = itemRepository.findByOrderIdForUpdate(id);
+            if (undoRepository.existsPendingForOrder(id)) {
+                throw new UndoRequestPendingException("La orden " + id
+                        + " tiene unidades con una solicitud de deshacer asignacion pendiente");
+            }
+            List<OrderItem> items = locked.stream()
                     .map(item -> item.getStatus().isTerminal() ? item : canceller.cancel(item, actor))
                     .toList();
             order.recalculateItemsTotal(items);
             return new OrderView(orderRepository.save(order), items);
         });
+        // cancelacion ya confirmada: cada unidad cubierta se libera en ms-inventory fuera de la transaccion; un
+        // fallo deja la marca para el job y nunca deshace la cancelacion
+        List<OrderItem> items = cancelled.items().stream().map(item -> releaser.release(item, actor)).toList();
+        return new OrderView(cancelled.order(), items);
     }
 
     private Order lockOrder(Long id) {

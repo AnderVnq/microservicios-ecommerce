@@ -4,6 +4,7 @@ import com.example.mspedidos.application.port.in.CreateOrderCommand;
 import com.example.mspedidos.application.port.in.OrderLine;
 import com.example.mspedidos.application.port.out.ActorProvider;
 import com.example.mspedidos.application.port.out.ClientesPort;
+import com.example.mspedidos.application.port.out.InventoryPort;
 import com.example.mspedidos.application.port.out.ItemIncidentRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderItemHistoryRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderItemRepositoryPort;
@@ -33,9 +34,10 @@ import static org.mockito.Mockito.when;
 
 /**
  * Base de los tests de servicio: contexto real sobre H2, sin {@code @Transactional} (cada operacion confirma
- * de verdad), con ms-clientes y el actor mockeados. Las tablas se limpian antes de cada test.
+ * de verdad), con ms-clientes, ms-inventory y el actor mockeados. Las tablas se limpian antes de cada test.
+ * El job de liberaciones queda con un intervalo enorme para que no corra en paralelo a los tests.
  */
-@SpringBootTest
+@SpringBootTest(properties = "orders.inventory-release-job.delay-ms=86400000")
 abstract class ServiceTestSupport {
 
     static final int YEAR = 2026;
@@ -46,6 +48,8 @@ abstract class ServiceTestSupport {
     ClientesPort clientesPort;
     @MockitoBean
     ActorProvider actorProvider;
+    @MockitoBean
+    InventoryPort inventoryPort;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -60,6 +64,7 @@ abstract class ServiceTestSupport {
 
     @BeforeEach
     void cleanDatabaseAndStubActor() {
+        jdbc.update("delete from allocation_undo_requests");
         jdbc.update("delete from order_item_history");
         jdbc.update("delete from item_incidents");
         jdbc.update("delete from order_items");

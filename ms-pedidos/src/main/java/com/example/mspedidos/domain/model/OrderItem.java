@@ -4,6 +4,7 @@ import com.example.mspedidos.domain.exception.ImporterChangeNotAllowedException;
 import com.example.mspedidos.domain.exception.ImporterRequiredException;
 import com.example.mspedidos.domain.exception.InvalidStatusTransitionException;
 import com.example.mspedidos.domain.exception.ItemNotEditableException;
+import com.example.mspedidos.domain.exception.UndoNotAllowedException;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -28,6 +29,9 @@ public class OrderItem {
     private ImporterType importerType;
     private Long familyMemberId;
     private ImporterDocument importerDocument;
+    private Long inventoryUnitId;
+    private boolean inventoryReleasePending;
+    private Long pendingReleaseUnitId;
     private Instant createdAt;
     private Instant updatedAt;
 
@@ -95,7 +99,66 @@ public class OrderItem {
         if (status.isTerminal()) {
             throw new InvalidStatusTransitionException("No se puede cancelar una unidad en estado " + status);
         }
+        if (isInPostAllocationState()) {
+            this.inventoryReleasePending = true;
+            this.pendingReleaseUnitId = inventoryUnitId;
+        }
         this.status = OrderItemStatus.CANCELLED;
+    }
+
+    /** Cubre la unidad con stock de inventario (solo desde PROCESSING y sin cobertura previa). */
+    public void coverFromInventory(Long inventoryUnitId, Warehouse warehouse) {
+        if (warehouse == null) {
+            throw new IllegalArgumentException("El almacen es obligatorio");
+        }
+        if (status != OrderItemStatus.PROCESSING || this.inventoryUnitId != null) {
+            throw new InvalidStatusTransitionException(
+                    "Solo una unidad en PROCESSING sin cobertura previa puede cubrirse desde inventario, actual: "
+                            + status);
+        }
+        this.inventoryUnitId = inventoryUnitId;
+        this.warehouse = warehouse;
+        if (warehouse == Warehouse.LIMA) {
+            this.status = OrderItemStatus.RECEIVED_LIMA;
+            this.importerType = ImporterType.NOT_REQUIRED;
+            this.familyMemberId = null;
+            this.importerDocument = null;
+        } else {
+            this.status = OrderItemStatus.RECEIVED_AT_WAREHOUSE;
+        }
+    }
+
+    /** La unidad sigue en el estado en que la dejo la cobertura de inventario. */
+    public boolean isInPostAllocationState() {
+        if (inventoryUnitId == null) {
+            return false;
+        }
+        return (status == OrderItemStatus.RECEIVED_AT_WAREHOUSE && warehouse == Warehouse.USA)
+                || (status == OrderItemStatus.RECEIVED_LIMA && warehouse == Warehouse.LIMA);
+    }
+
+    /** Deshace la cobertura; devuelve la unidad de inventario que queda pendiente de liberar. */
+    public Long undoInventoryCoverage() {
+        if (!isInPostAllocationState()) {
+            throw new UndoNotAllowedException(
+                    "La cobertura de inventario solo se puede deshacer mientras la unidad no haya avanzado, actual: "
+                            + status);
+        }
+        Long old = inventoryUnitId;
+        this.status = OrderItemStatus.PROCESSING;
+        this.warehouse = null;
+        this.pendingReleaseUnitId = old;
+        this.inventoryUnitId = null;
+        this.inventoryReleasePending = true;
+        if (importerType == ImporterType.NOT_REQUIRED) {
+            this.importerType = ImporterType.UNASSIGNED;
+        }
+        return old;
+    }
+
+    public void markReleased() {
+        this.inventoryReleasePending = false;
+        this.pendingReleaseUnitId = null;
     }
 
     public void updateDetails(String sku, String externalItemId, BigDecimal unitPrice) {
@@ -108,10 +171,16 @@ public class OrderItem {
     }
 
     public boolean consumesQuota() {
-        return status != OrderItemStatus.CANCELLED && importerType != ImporterType.UNASSIGNED;
+        return status != OrderItemStatus.CANCELLED
+                && importerType != ImporterType.UNASSIGNED
+                && importerType != ImporterType.NOT_REQUIRED;
     }
 
     private void ensureImporterChangeAllowed() {
+        if (importerType == ImporterType.NOT_REQUIRED) {
+            throw new ImporterChangeNotAllowedException(
+                    "La unidad cubierta desde inventario en Lima no requiere importador");
+        }
         if (!status.isBeforeReadyToShip()) {
             throw new ImporterChangeNotAllowedException(
                     "El importador solo se puede cambiar antes de READY_TO_SHIP, actual: " + status);

@@ -19,6 +19,8 @@ public record OrderItemResponse(
         Warehouse warehouse,
         DeliveredTo deliveredTo,
         ImporterType importerType,
+        Long inventoryUnitId,
+        boolean inventoryReleasePending,
         Long familyMemberId,
         String importerDocumentType,
         String importerDocumentNumber,
@@ -29,7 +31,7 @@ public record OrderItemResponse(
         var doc = i.getImporterDocument();
         return new OrderItemResponse(i.getId(), i.getOrderId(), i.getSku(), i.getExternalItemId(),
                 i.getUnitPrice(), i.getStatus(), i.getWarehouse(), i.getDeliveredTo(), i.getImporterType(),
-                i.getFamilyMemberId(), doc == null ? null : doc.type(), doc == null ? null : doc.number(),
+                i.getInventoryUnitId(), i.isInventoryReleasePending(), i.getFamilyMemberId(), doc == null ? null : doc.type(), doc == null ? null : doc.number(),
                 i.getCreatedAt(), i.getUpdatedAt());
     }
 }

@@ -1,7 +1,17 @@
 package com.example.mspedidos.infrastructure.web;
 
 import com.example.mspedidos.application.port.in.AssignImporterCommand;
+import com.example.mspedidos.application.port.in.AllocationUndoUseCase;
+import com.example.mspedidos.application.port.in.ImporterQuotaUseCase;
+import com.example.mspedidos.application.port.in.InventoryAllocationUseCase;
 import com.example.mspedidos.application.port.in.OrderItemUseCase;
+import com.example.mspedidos.application.port.in.OrderView;
+import com.example.mspedidos.application.port.in.OrderUseCase;
+import com.example.mspedidos.domain.exception.AuthUnavailableException;
+import com.example.mspedidos.domain.exception.InventoryUnavailableException;
+import com.example.mspedidos.domain.model.AllocationUndoRequest;
+import com.example.mspedidos.domain.model.Order;
+import com.example.mspedidos.domain.model.UndoRequestStatus;
 import com.example.mspedidos.domain.exception.ImporterRequiredException;
 import com.example.mspedidos.domain.exception.OrderItemNotFoundException;
 import com.example.mspedidos.domain.exception.QuotaExceededException;
@@ -39,12 +49,16 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@WebMvcTest(OrderItemController.class)
+@WebMvcTest({OrderItemController.class, OrderItemSearchController.class, OrderController.class})
 @Import(SecurityConfig.class)
 class OrderItemControllerTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean OrderItemUseCase items;
+    @MockitoBean InventoryAllocationUseCase allocation;
+    @MockitoBean AllocationUndoUseCase undo;
+    @MockitoBean OrderUseCase orders;
+    @MockitoBean ImporterQuotaUseCase quota;
     @MockitoBean JwtDecoder jwtDecoder;
 
     private static OrderItem unit(long id) {
@@ -147,5 +161,108 @@ class OrderItemControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].performedBy").value("u1"))
                 .andExpect(jsonPath("$[0].toValue").value("PROCESSING"));
+    }
+
+    @Test
+    void allocate_200_mapsInventoryFields() throws Exception {
+        OrderItem covered = OrderItem.builder().id(1L).orderId(7L).sku("SKU-1").unitPrice(new BigDecimal("10.50"))
+                .status(OrderItemStatus.PROCESSING).importerType(ImporterType.UNASSIGNED)
+                .inventoryUnitId(99L).inventoryReleasePending(false).build();
+        when(allocation.allocate(7L, 1L, 99L)).thenReturn(covered);
+
+        mvc.perform(post("/api/v1/orders/7/items/1/inventory-allocation").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryUnitId\":99}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(1))
+                .andExpect(jsonPath("$.inventoryUnitId").value(99))
+                .andExpect(jsonPath("$.inventoryReleasePending").value(false));
+    }
+
+    @Test
+    void allocate_missingUnitId_422() throws Exception {
+        mvc.perform(post("/api/v1/orders/7/items/1/inventory-allocation").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        verifyNoInteractions(allocation);
+    }
+
+    @Test
+    void allocate_inventoryDown_503_INVENTORY_UNAVAILABLE() throws Exception {
+        when(allocation.allocate(7L, 1L, 99L)).thenThrow(new InventoryUnavailableException("caido"));
+
+        mvc.perform(post("/api/v1/orders/7/items/1/inventory-allocation").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryUnitId\":99}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("INVENTORY_UNAVAILABLE"));
+    }
+
+    @Test
+    void allocate_authDown_503_AUTH_UNAVAILABLE() throws Exception {
+        when(allocation.allocate(7L, 1L, 99L)).thenThrow(new AuthUnavailableException("caido"));
+
+        mvc.perform(post("/api/v1/orders/7/items/1/inventory-allocation").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"inventoryUnitId\":99}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("AUTH_UNAVAILABLE"));
+    }
+
+    @Test
+    void undoRequest_201_mapsResponse() throws Exception {
+        when(undo.request(7L, 1L, "se cubrio mal")).thenReturn(AllocationUndoRequest.builder().id(3L)
+                .orderItemId(1L).inventoryUnitId(99L).reason("se cubrio mal").status(UndoRequestStatus.PENDING)
+                .requestedBy("u1").requestedAt(Instant.parse("2026-03-01T10:00:00Z")).build());
+
+        mvc.perform(post("/api/v1/orders/7/items/1/allocation-undo-requests").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"se cubrio mal\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(3))
+                .andExpect(jsonPath("$.orderItemId").value(1))
+                .andExpect(jsonPath("$.inventoryUnitId").value(99))
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.requestedBy").value("u1"));
+    }
+
+    @Test
+    void undoRequest_blankReason_422() throws Exception {
+        mvc.perform(post("/api/v1/orders/7/items/1/allocation-undo-requests").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"  \"}"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+        verifyNoInteractions(undo);
+    }
+
+    @Test
+    void itemsReleasePending_returnsFlagged() throws Exception {
+        OrderItem flagged = OrderItem.builder().id(4L).orderId(7L).sku("SKU-1").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.PROCESSING).importerType(ImporterType.UNASSIGNED)
+                .inventoryReleasePending(true).build();
+        when(items.findByReleasePending(true)).thenReturn(List.of(flagged));
+
+        mvc.perform(get("/api/v1/orders/items").param("inventoryReleasePending", "true").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(4))
+                .andExpect(jsonPath("$[0].inventoryReleasePending").value(true));
+        verifyNoInteractions(orders);
+    }
+
+    @Test
+    void literalItemsPath_winsOverOrderId_andOrderByIdStillWorks() throws Exception {
+        when(items.findByReleasePending(null)).thenReturn(List.of());
+        when(orders.findById(5L)).thenReturn(new OrderView(
+                Order.builder().id(5L).externalOrderId("EXT-5").holderId(1L).marketId(2L)
+                        .orderDate(java.time.LocalDateTime.of(2026, 3, 1, 10, 0)).itemsTotal(BigDecimal.ZERO).build(),
+                List.of()));
+
+        mvc.perform(get("/api/v1/orders/items").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
+        verifyNoInteractions(orders);
+
+        mvc.perform(get("/api/v1/orders/5").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(5));
+        verify(orders).findById(5L);
     }
 }

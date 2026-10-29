@@ -1,6 +1,11 @@
 package com.example.mspedidos.infrastructure.web;
 
+import com.example.mspedidos.application.port.in.AllocationUndoUseCase;
+import com.example.mspedidos.application.port.in.InventoryAllocationUseCase;
 import com.example.mspedidos.application.port.in.OrderItemUseCase;
+import com.example.mspedidos.infrastructure.web.dto.AllocateInventoryRequest;
+import com.example.mspedidos.infrastructure.web.dto.AllocationUndoRequestResponse;
+import com.example.mspedidos.infrastructure.web.dto.UndoRequestCreateRequest;
 import com.example.mspedidos.infrastructure.web.dto.AssignImporterRequest;
 import com.example.mspedidos.infrastructure.web.dto.ChangeStatusRequest;
 import com.example.mspedidos.infrastructure.web.dto.HistoryEntryResponse;
@@ -29,6 +34,8 @@ import java.util.List;
 public class OrderItemController {
 
     private final OrderItemUseCase itemUseCase;
+    private final InventoryAllocationUseCase allocationUseCase;
+    private final AllocationUndoUseCase undoUseCase;
 
     @GetMapping
     public List<OrderItemResponse> findByOrder(@PathVariable Long orderId) {
@@ -65,6 +72,19 @@ public class OrderItemController {
     public OrderItemResponse assignImporter(@PathVariable Long orderId, @PathVariable Long itemId,
                                             @Valid @RequestBody AssignImporterRequest request) {
         return OrderItemResponse.from(itemUseCase.assignImporter(orderId, itemId, request.toCommand()));
+    }
+
+    @PostMapping("/{itemId}/inventory-allocation")
+    public OrderItemResponse allocate(@PathVariable Long orderId, @PathVariable Long itemId,
+                                      @Valid @RequestBody AllocateInventoryRequest request) {
+        return OrderItemResponse.from(allocationUseCase.allocate(orderId, itemId, request.inventoryUnitId()));
+    }
+
+    @PostMapping("/{itemId}/allocation-undo-requests")
+    @ResponseStatus(HttpStatus.CREATED)
+    public AllocationUndoRequestResponse requestUndo(@PathVariable Long orderId, @PathVariable Long itemId,
+                                                     @Valid @RequestBody UndoRequestCreateRequest request) {
+        return AllocationUndoRequestResponse.from(undoUseCase.request(orderId, itemId, request.reason()));
     }
 
     @GetMapping("/{itemId}/history")

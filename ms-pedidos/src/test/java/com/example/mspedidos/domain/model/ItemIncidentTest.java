@@ -24,6 +24,16 @@ class ItemIncidentTest {
     }
 
     @Test
+    void importerPendingWithDescription_usesGivenText() {
+        ItemIncident incident = ItemIncident.importerPending(5L, "Asignacion de inventario deshecha; asignar importador", "admin");
+
+        assertThat(incident.getType()).isEqualTo(IncidentType.IMPORTER_ASSIGNMENT_PENDING);
+        assertThat(incident.getScope()).isEqualTo(IncidentScope.EXTERNAL);
+        assertThat(incident.getDescription()).isEqualTo("Asignacion de inventario deshecha; asignar importador");
+        assertThat(incident.getOpenedBy()).isEqualTo("admin");
+    }
+
+    @Test
     void open_createsOpenIncidentWithGivenValues() {
         ItemIncident incident = ItemIncident.open(2L, IncidentType.DELAY, IncidentScope.INTERNAL, "late", "op");
 

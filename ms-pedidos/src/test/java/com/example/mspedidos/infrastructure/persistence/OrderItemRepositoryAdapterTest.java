@@ -105,4 +105,56 @@ class OrderItemRepositoryAdapterTest {
         assertThat(items.findByOrderId(o.getId())).hasSize(2)
                 .anyMatch(i -> i.getImporterDocument() == null);
     }
+
+    @Test
+    void notRequiredUnitsDoNotCount() {
+        Order o = order("EXT-NR", 1L, LocalDateTime.of(2026, 5, 1, 10, 0));
+        item(o.getId(), ImporterType.NOT_REQUIRED, DNI_111, OrderItemStatus.RECEIVED_LIMA);
+        item(o.getId(), ImporterType.HOLDER, DNI_111, OrderItemStatus.PROCESSING);
+
+        assertThat(items.countQuotaUnits(DNI_111, 2026, null)).isEqualTo(1);
+    }
+
+    @Test
+    void inventoryFieldsRoundTrip() {
+        Order o = order("EXT-INV", 1L, LocalDateTime.of(2026, 5, 1, 10, 0));
+        OrderItem saved = items.save(OrderItem.builder().orderId(o.getId()).sku("S").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.CANCELLED).importerType(ImporterType.NOT_REQUIRED)
+                .inventoryUnitId(5L).inventoryReleasePending(true).pendingReleaseUnitId(5L).build());
+        OrderItem found = items.findByOrderId(o.getId()).get(0);
+        assertThat(found.getId()).isEqualTo(saved.getId());
+        assertThat(found.getInventoryUnitId()).isEqualTo(5L);
+        assertThat(found.isInventoryReleasePending()).isTrue();
+        assertThat(found.getPendingReleaseUnitId()).isEqualTo(5L);
+        assertThat(items.save(item(o.getId(), ImporterType.UNASSIGNED, null, OrderItemStatus.PROCESSING))
+                .isInventoryReleasePending()).isFalse();
+    }
+
+    private OrderItem pendingItem(Long orderId, boolean pending) {
+        return items.save(OrderItem.builder().orderId(orderId).sku("S").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.CANCELLED).importerType(ImporterType.NOT_REQUIRED).inventoryUnitId(9L)
+                .inventoryReleasePending(pending).pendingReleaseUnitId(pending ? 9L : null).build());
+    }
+
+    @Test
+    void findReleasePending_returnsOnlyFlaggedUnitsById() {
+        Order o = order("EXT-REL", 1L, LocalDateTime.of(2026, 5, 1, 10, 0));
+        OrderItem first = pendingItem(o.getId(), true);
+        pendingItem(o.getId(), false);
+        OrderItem second = pendingItem(o.getId(), true);
+
+        assertThat(items.findReleasePending()).extracting(OrderItem::getId)
+                .containsExactly(first.getId(), second.getId());
+    }
+
+    @Test
+    void search_filtersByReleasePendingOrReturnsAll() {
+        Order o = order("EXT-SRCH", 1L, LocalDateTime.of(2026, 5, 1, 10, 0));
+        OrderItem pending = pendingItem(o.getId(), true);
+        OrderItem clean = pendingItem(o.getId(), false);
+
+        assertThat(items.search(true)).extracting(OrderItem::getId).containsExactly(pending.getId());
+        assertThat(items.search(false)).extracting(OrderItem::getId).containsExactly(clean.getId());
+        assertThat(items.search(null)).extracting(OrderItem::getId).containsExactly(pending.getId(), clean.getId());
+    }
 }

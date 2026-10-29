@@ -16,6 +16,8 @@ interface SpringDataOrderItemRepository extends JpaRepository<OrderItemJpaEntity
 
     List<OrderItemJpaEntity> findByOrderIdOrderByIdAsc(Long orderId);
 
+    List<OrderItemJpaEntity> findByInventoryReleasePendingOrderByIdAsc(boolean inventoryReleasePending);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from OrderItemJpaEntity i where i.id = :id and i.orderId = :orderId")
     Optional<OrderItemJpaEntity> findForUpdate(@Param("id") Long id, @Param("orderId") Long orderId);
@@ -29,6 +31,7 @@ interface SpringDataOrderItemRepository extends JpaRepository<OrderItemJpaEntity
             where i.orderId = o.id
               and i.status <> com.example.mspedidos.domain.model.OrderItemStatus.CANCELLED
               and i.importerType <> com.example.mspedidos.domain.model.ImporterType.UNASSIGNED
+              and i.importerType <> com.example.mspedidos.domain.model.ImporterType.NOT_REQUIRED
               and i.importerDocumentType = :docType
               and i.importerDocumentNumber = :docNumber
               and o.orderDate >= :from and o.orderDate < :to
