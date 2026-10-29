@@ -20,7 +20,26 @@ spring:
             - id: ms-pedidos
               uri: ${PEDIDOS_SERVICE_URI:http://localhost:8083}
               predicates:
-                - Path=/api/v1/pedidos/**
+                - Path=/api/v1/orders/**,/api/v1/incidents/**,/api/v1/suppliers/**,/api/v1/purchases/**,/api/v1/status-change-requests/**
+            # La asignacion directa en inventario se bloquea: solo ms-pedidos asigna (servicio a servicio).
+            # Debe ir ANTES de la ruta ms-inventory.
+            - id: block-inventory-allocation
+              uri: no://op
+              predicates:
+                - Path=/api/v1/inventory/units/*/allocation
+              filters:
+                - SetStatus=403
+            # Las entradas por compra solo las registra ms-pedidos (servicio a servicio).
+            - id: block-inventory-purchase-entries
+              uri: no://op
+              predicates:
+                - Path=/api/v1/inventory/purchase-entries/**
+              filters:
+                - SetStatus=403
+            - id: ms-inventory
+              uri: ${INVENTORY_SERVICE_URI:http://localhost:8085}
+              predicates:
+                - Path=/api/v1/inventory/**
             - id: ms-auth
               uri: ${AUTH_SERVICE_URI:http://localhost:8084}
               predicates:
