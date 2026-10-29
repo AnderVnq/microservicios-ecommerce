@@ -67,9 +67,6 @@ services:
       DB_USER: ${DB_USER:-app}
       DB_PASSWORD: ${DB_PASSWORD:-app}
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: app
-      RABBITMQ_PASSWORD: app
     ports:
       - "8082:8082"
     extra_hosts:
@@ -77,8 +74,6 @@ services:
     depends_on:
       keycloak:
         condition: service_started
-      rabbitmq:
-        condition: service_healthy
 
   ms-pedidos:
     build:
@@ -91,9 +86,7 @@ services:
       DB_USER: ${DB_USER:-app}
       DB_PASSWORD: ${DB_PASSWORD:-app}
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
-      RABBITMQ_HOST: rabbitmq
-      RABBITMQ_USER: app
-      RABBITMQ_PASSWORD: app
+      CLIENTES_SERVICE_URI: http://ms-clientes:8082
     ports:
       - "8083:8083"
     extra_hosts:
@@ -101,8 +94,8 @@ services:
     depends_on:
       keycloak:
         condition: service_started
-      rabbitmq:
-        condition: service_healthy
+      ms-clientes:
+        condition: service_started
 
   ms-auth:
     build:
