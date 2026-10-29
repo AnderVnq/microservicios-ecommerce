@@ -1,12 +1,14 @@
 package com.example.mspedidos.infrastructure.persistence;
 
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -15,6 +17,8 @@ interface SpringDataOrderItemRepository extends JpaRepository<OrderItemJpaEntity
     Optional<OrderItemJpaEntity> findByIdAndOrderId(Long id, Long orderId);
 
     List<OrderItemJpaEntity> findByOrderIdOrderByIdAsc(Long orderId);
+
+    List<OrderItemJpaEntity> findByOrderIdInOrderByIdAsc(Collection<Long> orderIds);
 
     List<OrderItemJpaEntity> findByInventoryReleasePendingOrderByIdAsc(boolean inventoryReleasePending);
 
@@ -40,4 +44,36 @@ interface SpringDataOrderItemRepository extends JpaRepository<OrderItemJpaEntity
     long countQuotaUnits(@Param("docType") String docType, @Param("docNumber") String docNumber,
                          @Param("from") LocalDateTime from, @Param("to") LocalDateTime to,
                          @Param("excludeItemId") Long excludeItemId);
+
+    @Query("""
+            select i.id from OrderItemJpaEntity i, OrderJpaEntity o
+            where i.orderId = o.id and i.sku = :sku
+              and i.status = com.example.mspedidos.domain.model.OrderItemStatus.PROCESSING
+              and i.purchaseId is null and i.inventoryUnitId is null
+              and i.inventoryReleasePending = false
+              and not exists (select 1 from StatusChangeRequestJpaEntity r
+                              where r.orderItemId = i.id
+                                and r.status = com.example.mspedidos.domain.model.StatusChangeRequestStatus.PENDING)
+            order by case when o.shippingDeadline is null then 1 else 0 end, o.shippingDeadline asc,
+                     o.orderDate asc, i.id asc
+            """)
+    List<Long> findCoverableIds(@Param("sku") String sku, Pageable page);
+
+    @Query("""
+            select i.id from OrderItemJpaEntity i, OrderJpaEntity o
+            where i.orderId = o.id and i.id in :ids
+            order by case when o.shippingDeadline is null then 1 else 0 end, o.shippingDeadline asc,
+                     o.orderDate asc, i.id asc
+            """)
+    List<Long> orderIdsByUrgency(@Param("ids") Collection<Long> ids);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from OrderItemJpaEntity i where i.id in :ids order by i.id asc")
+    List<OrderItemJpaEntity> findAllByIdsForUpdate(@Param("ids") Collection<Long> ids);
+
+    List<OrderItemJpaEntity> findByPurchaseIdOrderByIdAsc(Long purchaseId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select i from OrderItemJpaEntity i where i.purchaseId = :purchaseId order by i.id asc")
+    List<OrderItemJpaEntity> findAllByPurchaseIdForUpdate(@Param("purchaseId") Long purchaseId);
 }

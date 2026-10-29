@@ -4,13 +4,13 @@ import com.example.mspedidos.application.port.in.CreateOrderCommand;
 import com.example.mspedidos.application.port.in.OrderUseCase;
 import com.example.mspedidos.application.port.in.OrderView;
 import com.example.mspedidos.application.port.out.ActorProvider;
-import com.example.mspedidos.application.port.out.AllocationUndoRequestRepositoryPort;
+import com.example.mspedidos.application.port.out.StatusChangeRequestRepositoryPort;
 import com.example.mspedidos.application.port.out.ClientesPort;
 import com.example.mspedidos.application.port.out.OrderItemRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderRepositoryPort;
 import com.example.mspedidos.domain.exception.DuplicateExternalOrderException;
 import com.example.mspedidos.domain.exception.OrderNotFoundException;
-import com.example.mspedidos.domain.exception.UndoRequestPendingException;
+import com.example.mspedidos.domain.exception.StatusChangeRequestPendingException;
 import com.example.mspedidos.domain.model.Order;
 import com.example.mspedidos.domain.model.OrderHeaderChanges;
 import com.example.mspedidos.domain.model.OrderItem;
@@ -23,6 +23,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /** Orden de locks: orden -> cupo -> unidades por id ascendente (ver {@link OrderItemService}). */
 @Service
@@ -35,12 +37,12 @@ public class OrderService implements OrderUseCase {
     private final OrderItemRepositoryPort itemRepository;
     private final ItemCanceller canceller;
     private final InventoryReleaser releaser;
-    private final AllocationUndoRequestRepositoryPort undoRepository;
+    private final StatusChangeRequestRepositoryPort undoRepository;
     private final TransactionTemplate tx;
 
     OrderService(OrderRepositoryPort orderRepository, ClientesPort clientesPort, ActorProvider actorProvider,
                  UnitCreator unitCreator, OrderItemRepositoryPort itemRepository, ItemCanceller canceller,
-                 InventoryReleaser releaser, AllocationUndoRequestRepositoryPort undoRepository,
+                 InventoryReleaser releaser, StatusChangeRequestRepositoryPort undoRepository,
                  PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.clientesPort = clientesPort;
@@ -77,8 +79,14 @@ public class OrderService implements OrderUseCase {
     }
 
     @Override
-    public List<Order> findAll() {
-        return orderRepository.findAll();
+    public List<OrderView> findAll() {
+        List<Order> orders = orderRepository.findAll();
+        Map<Long, List<OrderItem>> itemsByOrder = itemRepository
+                .findByOrderIds(orders.stream().map(Order::getId).toList()).stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId));
+        return orders.stream()
+                .map(o -> new OrderView(o, itemsByOrder.getOrDefault(o.getId(), List.of())))
+                .toList();
     }
 
     @Override
@@ -103,8 +111,8 @@ public class OrderService implements OrderUseCase {
             Order order = lockOrder(id);
             List<OrderItem> locked = itemRepository.findByOrderIdForUpdate(id);
             if (undoRepository.existsPendingForOrder(id)) {
-                throw new UndoRequestPendingException("La orden " + id
-                        + " tiene unidades con una solicitud de deshacer asignacion pendiente");
+                throw new StatusChangeRequestPendingException("La orden " + id
+                        + " tiene unidades con una solicitud de cambio de estado pendiente");
             }
             List<OrderItem> items = locked.stream()
                     .map(item -> item.getStatus().isTerminal() ? item : canceller.cancel(item, actor))

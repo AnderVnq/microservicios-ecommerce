@@ -1,17 +1,18 @@
 package com.example.mspedidos.infrastructure.web;
 
 import com.example.mspedidos.application.port.in.AssignImporterCommand;
-import com.example.mspedidos.application.port.in.AllocationUndoUseCase;
 import com.example.mspedidos.application.port.in.ImporterQuotaUseCase;
 import com.example.mspedidos.application.port.in.InventoryAllocationUseCase;
 import com.example.mspedidos.application.port.in.OrderItemUseCase;
 import com.example.mspedidos.application.port.in.OrderView;
 import com.example.mspedidos.application.port.in.OrderUseCase;
+import com.example.mspedidos.application.port.in.StatusChangeRequestUseCase;
 import com.example.mspedidos.domain.exception.AuthUnavailableException;
 import com.example.mspedidos.domain.exception.InventoryUnavailableException;
-import com.example.mspedidos.domain.model.AllocationUndoRequest;
+import com.example.mspedidos.domain.model.StatusChangeRequest;
 import com.example.mspedidos.domain.model.Order;
-import com.example.mspedidos.domain.model.UndoRequestStatus;
+import com.example.mspedidos.domain.model.StatusChangeRequestStatus;
+import com.example.mspedidos.domain.model.StatusChangeRequestType;
 import com.example.mspedidos.domain.exception.ImporterRequiredException;
 import com.example.mspedidos.domain.exception.OrderItemNotFoundException;
 import com.example.mspedidos.domain.exception.QuotaExceededException;
@@ -56,7 +57,7 @@ class OrderItemControllerTest {
     @Autowired MockMvc mvc;
     @MockitoBean OrderItemUseCase items;
     @MockitoBean InventoryAllocationUseCase allocation;
-    @MockitoBean AllocationUndoUseCase undo;
+    @MockitoBean StatusChangeRequestUseCase undo;
     @MockitoBean OrderUseCase orders;
     @MockitoBean ImporterQuotaUseCase quota;
     @MockitoBean JwtDecoder jwtDecoder;
@@ -209,18 +210,45 @@ class OrderItemControllerTest {
 
     @Test
     void undoRequest_201_mapsResponse() throws Exception {
-        when(undo.request(7L, 1L, "se cubrio mal")).thenReturn(AllocationUndoRequest.builder().id(3L)
-                .orderItemId(1L).inventoryUnitId(99L).reason("se cubrio mal").status(UndoRequestStatus.PENDING)
+        when(undo.requestAllocationUndo(7L, 1L, "se cubrio mal")).thenReturn(StatusChangeRequest.builder().id(3L)
+                .type(StatusChangeRequestType.ALLOCATION_UNDO).orderItemId(1L).inventoryUnitId(99L)
+                .reason("se cubrio mal").status(StatusChangeRequestStatus.PENDING)
                 .requestedBy("u1").requestedAt(Instant.parse("2026-03-01T10:00:00Z")).build());
 
         mvc.perform(post("/api/v1/orders/7/items/1/allocation-undo-requests").with(jwt())
                         .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"se cubrio mal\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value(3))
+                .andExpect(jsonPath("$.type").value("ALLOCATION_UNDO"))
                 .andExpect(jsonPath("$.orderItemId").value(1))
                 .andExpect(jsonPath("$.inventoryUnitId").value(99))
                 .andExpect(jsonPath("$.status").value("PENDING"))
                 .andExpect(jsonPath("$.requestedBy").value("u1"));
+    }
+
+    @Test
+    void undoRequest_appliedDirectly_200() throws Exception {
+        when(undo.requestAllocationUndo(7L, 1L, "se cubrio mal")).thenReturn(StatusChangeRequest.builder().id(3L)
+                .type(StatusChangeRequestType.ALLOCATION_UNDO).orderItemId(1L).inventoryUnitId(99L)
+                .reason("se cubrio mal").status(StatusChangeRequestStatus.APPLIED_DIRECTLY).requestedBy("gerente")
+                .decidedBy("gerente").requestedAt(Instant.parse("2026-03-01T10:00:00Z"))
+                .decidedAt(Instant.parse("2026-03-01T10:00:00Z")).build());
+
+        mvc.perform(post("/api/v1/orders/7/items/1/allocation-undo-requests").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"se cubrio mal\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("APPLIED_DIRECTLY"))
+                .andExpect(jsonPath("$.decidedBy").value("gerente"));
+    }
+
+    @Test
+    void undoRequest_authDown_503() throws Exception {
+        when(undo.requestAllocationUndo(7L, 1L, "se cubrio mal")).thenThrow(new AuthUnavailableException("caido"));
+
+        mvc.perform(post("/api/v1/orders/7/items/1/allocation-undo-requests").with(jwt())
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"reason\":\"se cubrio mal\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("AUTH_UNAVAILABLE"));
     }
 
     @Test

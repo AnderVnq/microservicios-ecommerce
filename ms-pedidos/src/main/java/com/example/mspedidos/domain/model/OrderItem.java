@@ -5,6 +5,7 @@ import com.example.mspedidos.domain.exception.ImporterRequiredException;
 import com.example.mspedidos.domain.exception.InvalidStatusTransitionException;
 import com.example.mspedidos.domain.exception.ItemNotEditableException;
 import com.example.mspedidos.domain.exception.UndoNotAllowedException;
+import com.example.mspedidos.domain.exception.UsePurchaseFlowException;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -30,6 +31,7 @@ public class OrderItem {
     private Long familyMemberId;
     private ImporterDocument importerDocument;
     private Long inventoryUnitId;
+    private Long purchaseId;
     private boolean inventoryReleasePending;
     private Long pendingReleaseUnitId;
     private Instant createdAt;
@@ -71,6 +73,13 @@ public class OrderItem {
         if (next == OrderItemStatus.CANCELLED) {
             throw new InvalidStatusTransitionException("Para cancelar una unidad use la operacion de cancelacion");
         }
+        if (next == OrderItemStatus.PURCHASED) {
+            throw new UsePurchaseFlowException("Use el flujo de compras para pasar una unidad a PURCHASED");
+        }
+        if (next == OrderItemStatus.RECEIVED_AT_WAREHOUSE && purchaseId != null) {
+            throw new UsePurchaseFlowException(
+                    "La unidad pertenece a una compra; registre la llegada desde el flujo de compras");
+        }
         if (!status.canMoveTo(next)) {
             throw new InvalidStatusTransitionException(
                     "Transicion de estado no permitida: " + status + " -> " + next);
@@ -99,7 +108,7 @@ public class OrderItem {
         if (status.isTerminal()) {
             throw new InvalidStatusTransitionException("No se puede cancelar una unidad en estado " + status);
         }
-        if (isInPostAllocationState()) {
+        if (releasesInventoryOnCancel()) {
             this.inventoryReleasePending = true;
             this.pendingReleaseUnitId = inventoryUnitId;
         }
@@ -137,9 +146,89 @@ public class OrderItem {
                 || (status == OrderItemStatus.RECEIVED_LIMA && warehouse == Warehouse.LIMA);
     }
 
+    /** Al cancelar hay que liberar la unidad de inventario asociada (asignada o de una compra). */
+    public boolean releasesInventoryOnCancel() {
+        if (inventoryUnitId == null) {
+            return false;
+        }
+        return isInPostAllocationState()
+                || status == OrderItemStatus.PURCHASED
+                || (status == OrderItemStatus.RECEIVED_AT_WAREHOUSE && warehouse == Warehouse.USA
+                && purchaseId != null);
+    }
+
+    /** Solo la cobertura por asignacion de inventario se puede deshacer; la de una compra no. */
+    public boolean canUndoAllocation() {
+        return isInPostAllocationState() && purchaseId == null;
+    }
+
+    /** Cubre la unidad con una compra (PROCESSING sin cobertura previa). */
+    public void coverByPurchase(Long purchaseId) {
+        if (purchaseId == null) {
+            throw new IllegalArgumentException("La compra es obligatoria");
+        }
+        if (status != OrderItemStatus.PROCESSING || this.purchaseId != null || this.inventoryUnitId != null
+                || inventoryReleasePending) {
+            throw new InvalidStatusTransitionException(
+                    "Solo una unidad en PROCESSING sin cobertura previa puede cubrirse con una compra, actual: "
+                            + status);
+        }
+        this.purchaseId = purchaseId;
+        this.status = OrderItemStatus.PURCHASED;
+    }
+
+    /**
+     * Vincula la unidad de inventario creada para esta unidad de compra. Puede llegar despues de que la unidad
+     * avanzara (p. ej. la llegada se registro antes de sincronizar la entrada), pero nunca a una cancelada.
+     */
+    public void linkPurchaseUnit(Long inventoryUnitId) {
+        if (purchaseId == null || status == OrderItemStatus.CANCELLED) {
+            throw new InvalidStatusTransitionException("La unidad no esta cubierta por una compra, actual: " + status);
+        }
+        this.inventoryUnitId = inventoryUnitId;
+    }
+
+    /**
+     * La unidad se cancelo antes de que la entrada de su compra se sincronizara con ms-inventory: la unidad de
+     * inventario que se le reservo nunca quedo vinculada y hay que liberarla (pasa a sobrante).
+     */
+    public void flagReleaseOfUnlinkedPurchaseUnit(Long unitId) {
+        if (unitId == null) {
+            throw new IllegalArgumentException("La unidad de inventario es obligatoria");
+        }
+        if (status != OrderItemStatus.CANCELLED || inventoryUnitId != null || inventoryReleasePending) {
+            throw new InvalidStatusTransitionException(
+                    "Solo una unidad cancelada sin unidad de inventario ni liberacion pendiente puede marcarse, actual: "
+                            + status);
+        }
+        this.inventoryReleasePending = true;
+        this.pendingReleaseUnitId = unitId;
+    }
+
+    /** Llegada de la compra al almacen USA. */
+    public void receiveFromPurchase() {
+        if (status != OrderItemStatus.PURCHASED || purchaseId == null) {
+            throw new InvalidStatusTransitionException("La unidad no esta cubierta por una compra, actual: " + status);
+        }
+        this.status = OrderItemStatus.RECEIVED_AT_WAREHOUSE;
+        this.warehouse = Warehouse.USA;
+    }
+
+    /** La compra no llego: la unidad vuelve a PROCESSING; devuelve la unidad de inventario (puede ser null). */
+    public Long revertNotReceived() {
+        if (status != OrderItemStatus.PURCHASED || purchaseId == null) {
+            throw new InvalidStatusTransitionException("La unidad no esta cubierta por una compra, actual: " + status);
+        }
+        Long old = inventoryUnitId;
+        this.status = OrderItemStatus.PROCESSING;
+        this.purchaseId = null;
+        this.inventoryUnitId = null;
+        return old;
+    }
+
     /** Deshace la cobertura; devuelve la unidad de inventario que queda pendiente de liberar. */
     public Long undoInventoryCoverage() {
-        if (!isInPostAllocationState()) {
+        if (!canUndoAllocation()) {
             throw new UndoNotAllowedException(
                     "La cobertura de inventario solo se puede deshacer mientras la unidad no haya avanzado, actual: "
                             + status);

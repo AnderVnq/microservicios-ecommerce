@@ -4,7 +4,7 @@ import com.example.mspedidos.application.port.in.AssignImporterCommand;
 import com.example.mspedidos.application.port.in.OrderItemUseCase;
 import com.example.mspedidos.application.port.in.OrderLine;
 import com.example.mspedidos.application.port.out.ActorProvider;
-import com.example.mspedidos.application.port.out.AllocationUndoRequestRepositoryPort;
+import com.example.mspedidos.application.port.out.StatusChangeRequestRepositoryPort;
 import com.example.mspedidos.application.port.out.ClientesPort;
 import com.example.mspedidos.application.port.out.ItemIncidentRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderItemHistoryRepositoryPort;
@@ -15,7 +15,7 @@ import com.example.mspedidos.domain.exception.ImporterChangeNotAllowedException;
 import com.example.mspedidos.domain.exception.OrderItemNotFoundException;
 import com.example.mspedidos.domain.exception.OrderNotFoundException;
 import com.example.mspedidos.domain.exception.QuotaExceededException;
-import com.example.mspedidos.domain.exception.UndoRequestPendingException;
+import com.example.mspedidos.domain.exception.StatusChangeRequestPendingException;
 import com.example.mspedidos.domain.model.DeliveredTo;
 import com.example.mspedidos.domain.model.HistoryEventType;
 import com.example.mspedidos.domain.model.ImporterDocument;
@@ -56,7 +56,7 @@ public class OrderItemService implements OrderItemUseCase {
     private final ItemCanceller canceller;
     private final InventoryReleaser releaser;
     private final OrderItemHistoryRepositoryPort historyRepository;
-    private final AllocationUndoRequestRepositoryPort undoRepository;
+    private final StatusChangeRequestRepositoryPort undoRepository;
     private final TransactionTemplate tx;
 
     OrderItemService(OrderRepositoryPort orderRepository, OrderItemRepositoryPort itemRepository,
@@ -65,7 +65,7 @@ public class OrderItemService implements OrderItemUseCase {
                      UnitCreator unitCreator, ItemHistoryRecorder history,
                      ItemCanceller canceller, InventoryReleaser releaser,
                      OrderItemHistoryRepositoryPort historyRepository,
-                     AllocationUndoRequestRepositoryPort undoRepository,
+                     StatusChangeRequestRepositoryPort undoRepository,
                      PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.itemRepository = itemRepository;
@@ -214,11 +214,11 @@ public class OrderItemService implements OrderItemUseCase {
         return item.getSku() + "/" + item.getExternalItemId() + "/" + item.getUnitPrice();
     }
 
-    /** Con una solicitud de deshacer pendiente la unidad queda congelada (spec 10.2c-2); llamar con su lock tomado. */
+    /** Con una solicitud de cambio de estado pendiente la unidad queda congelada (spec 10.2c-2); llamar con su lock tomado. */
     private void ensureNoPendingUndo(Long itemId) {
         undoRepository.findPendingByOrderItemId(itemId).ifPresent(pending -> {
-            throw new UndoRequestPendingException("La unidad " + itemId
-                    + " tiene una solicitud de deshacer asignacion pendiente: " + pending.getId());
+            throw new StatusChangeRequestPendingException("La unidad " + itemId
+                    + " tiene una solicitud de cambio de estado pendiente: " + pending.getId());
         });
     }
 

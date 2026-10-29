@@ -2,6 +2,8 @@ package com.example.mspedidos.infrastructure.persistence;
 
 import com.example.mspedidos.application.port.out.OrderItemRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderRepositoryPort;
+import com.example.mspedidos.application.port.out.StatusChangeRequestRepositoryPort;
+import com.example.mspedidos.domain.model.StatusChangeRequest;
 import com.example.mspedidos.domain.model.ImporterDocument;
 import com.example.mspedidos.domain.model.ImporterType;
 import com.example.mspedidos.domain.model.Order;
@@ -14,11 +16,12 @@ import org.springframework.context.annotation.Import;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @DataJpaTest
-@Import({OrderRepositoryAdapter.class, OrderItemRepositoryAdapter.class})
+@Import({OrderRepositoryAdapter.class, OrderItemRepositoryAdapter.class, StatusChangeRequestRepositoryAdapter.class})
 class OrderItemRepositoryAdapterTest {
 
     private static final ImporterDocument DNI_111 = new ImporterDocument("DNI", "111");
@@ -28,6 +31,8 @@ class OrderItemRepositoryAdapterTest {
     OrderRepositoryPort orders;
     @Autowired
     OrderItemRepositoryPort items;
+    @Autowired
+    StatusChangeRequestRepositoryPort requests;
 
     private Order order(String externalId, Long marketId, LocalDateTime orderDate) {
         return orders.save(Order.builder()
@@ -156,5 +161,88 @@ class OrderItemRepositoryAdapterTest {
         assertThat(items.search(true)).extracting(OrderItem::getId).containsExactly(pending.getId());
         assertThat(items.search(false)).extracting(OrderItem::getId).containsExactly(clean.getId());
         assertThat(items.search(null)).extracting(OrderItem::getId).containsExactly(pending.getId(), clean.getId());
+    }
+
+    private Order orderWithDeadline(String ext, LocalDateTime deadline, LocalDateTime orderDate) {
+        return orders.save(Order.builder().orderNumber("N-" + ext).externalOrderId(ext).marketId(1L).holderId(1L)
+                .orderDate(orderDate).shippingDeadline(deadline).itemsTotal(BigDecimal.ZERO).build());
+    }
+
+    private OrderItem processing(Long orderId, String sku) {
+        return items.save(OrderItem.builder().orderId(orderId).sku(sku).unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.PROCESSING).importerType(ImporterType.UNASSIGNED).build());
+    }
+
+    @Test
+    void findCoverableIdsByUrgency_deadlineAscNullsLastThenOrderDateThenId() {
+        LocalDateTime d1 = LocalDateTime.of(2026, 6, 1, 0, 0);
+        LocalDateTime d2 = LocalDateTime.of(2026, 7, 1, 0, 0);
+        Order noDeadlineOld = orderWithDeadline("E1", null, LocalDateTime.of(2026, 1, 1, 0, 0));
+        Order late = orderWithDeadline("E2", d2, LocalDateTime.of(2026, 1, 1, 0, 0));
+        Order earlyNewer = orderWithDeadline("E3", d1, LocalDateTime.of(2026, 3, 1, 0, 0));
+        Order earlyOlder = orderWithDeadline("E4", d1, LocalDateTime.of(2026, 2, 1, 0, 0));
+        OrderItem a = processing(noDeadlineOld.getId(), "S");
+        OrderItem b = processing(late.getId(), "S");
+        OrderItem c = processing(earlyNewer.getId(), "S");
+        OrderItem d1i = processing(earlyOlder.getId(), "S");
+        OrderItem d2i = processing(earlyOlder.getId(), "S");
+
+        assertThat(items.findCoverableIdsByUrgency("S", 10)).containsExactly(
+                d1i.getId(), d2i.getId(), c.getId(), b.getId(), a.getId());
+        assertThat(items.findCoverableIdsByUrgency("S", 2)).containsExactly(d1i.getId(), d2i.getId());
+        assertThat(items.findCoverableIdsByUrgency("OTHER", 10)).isEmpty();
+    }
+
+    @Test
+    void findCoverableIdsByUrgency_skipsCoveredPendingAndRequestBlocked() {
+        Order o = orderWithDeadline("E1", null, LocalDateTime.of(2026, 1, 1, 0, 0));
+        OrderItem free = processing(o.getId(), "S");
+        items.save(OrderItem.builder().orderId(o.getId()).sku("S").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.PROCESSING).importerType(ImporterType.UNASSIGNED).purchaseId(5L).build());
+        items.save(OrderItem.builder().orderId(o.getId()).sku("S").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.PROCESSING).importerType(ImporterType.UNASSIGNED).inventoryUnitId(8L).build());
+        items.save(OrderItem.builder().orderId(o.getId()).sku("S").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.PROCESSING).importerType(ImporterType.UNASSIGNED)
+                .inventoryReleasePending(true).build());
+        items.save(OrderItem.builder().orderId(o.getId()).sku("S").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.PURCHASED).importerType(ImporterType.UNASSIGNED).build());
+        OrderItem blocked = processing(o.getId(), "S");
+        requests.save(StatusChangeRequest.openAllocationUndo(blocked.getId(), 1L, "m", "ana"));
+        OrderItem decided = processing(o.getId(), "S");
+        StatusChangeRequest done = requests.save(
+                StatusChangeRequest.openAllocationUndo(decided.getId(), 2L, "m", "ana"));
+        done.reject("bob", "no");
+        requests.save(done);
+        // una solicitud de compra (sin order_item_id) no excluye unidades
+        requests.save(StatusChangeRequest.openNotReceived(5L, 1, "x", "ana"));
+
+        assertThat(items.findCoverableIdsByUrgency("S", 10)).containsExactly(free.getId(), decided.getId());
+    }
+
+    @Test
+    void orderByUrgency_sorts() {
+        Order none = orderWithDeadline("E1", null, LocalDateTime.of(2026, 1, 1, 0, 0));
+        Order early = orderWithDeadline("E2", LocalDateTime.of(2026, 6, 1, 0, 0), LocalDateTime.of(2026, 2, 1, 0, 0));
+        OrderItem a = processing(none.getId(), "S");
+        OrderItem b = processing(early.getId(), "S");
+        OrderItem c = processing(early.getId(), "S");
+
+        assertThat(items.orderByUrgency(List.of(a.getId(), c.getId(), b.getId())))
+                .containsExactly(b.getId(), c.getId(), a.getId());
+        assertThat(items.orderByUrgency(List.of())).isEmpty();
+    }
+
+    @Test
+    void purchaseIdRoundTripsAndLocksByIds() {
+        Order o = orderWithDeadline("E1", null, LocalDateTime.of(2026, 1, 1, 0, 0));
+        OrderItem a = items.save(OrderItem.builder().orderId(o.getId()).sku("S").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.PURCHASED).importerType(ImporterType.UNASSIGNED).purchaseId(9L).build());
+        OrderItem b = processing(o.getId(), "S");
+
+        assertThat(items.findById(a.getId()).orElseThrow().getPurchaseId()).isEqualTo(9L);
+        assertThat(items.findByPurchaseIdForUpdate(9L)).extracting(OrderItem::getId).containsExactly(a.getId());
+        assertThat(items.findByIdsForUpdate(List.of(b.getId(), a.getId())))
+                .extracting(OrderItem::getId).containsExactly(a.getId(), b.getId());
+        assertThat(items.findByIdsForUpdate(List.of())).isEmpty();
     }
 }

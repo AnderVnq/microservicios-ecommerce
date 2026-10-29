@@ -42,16 +42,17 @@ class OrderItemLifecycleTest extends ServiceTestSupport {
         OrderView view = orderWithFourUnits();
         OrderItem unit = view.items().get(0);
 
+        forcePurchased(unit.getId());
         OrderItem result = itemUseCase.changeStatus(view.order().getId(), unit.getId(),
-                OrderItemStatus.PURCHASED, null, null);
+                OrderItemStatus.RECEIVED_AT_WAREHOUSE, com.example.mspedidos.domain.model.Warehouse.USA, null);
 
-        assertThat(result.getStatus()).isEqualTo(OrderItemStatus.PURCHASED);
+        assertThat(result.getStatus()).isEqualTo(OrderItemStatus.RECEIVED_AT_WAREHOUSE);
         assertThat(itemRepository.findByIdAndOrderId(unit.getId(), view.order().getId()).orElseThrow().getStatus())
-                .isEqualTo(OrderItemStatus.PURCHASED);
+                .isEqualTo(OrderItemStatus.RECEIVED_AT_WAREHOUSE);
         OrderItemHistoryEntry last = historyRepository.findByOrderItemId(unit.getId()).stream()
                 .filter(h -> h.eventType() == HistoryEventType.STATUS_CHANGED).findFirst().orElseThrow();
-        assertThat(last.fromValue()).isEqualTo("PROCESSING");
-        assertThat(last.toValue()).isEqualTo("PURCHASED");
+        assertThat(last.fromValue()).isEqualTo("PURCHASED");
+        assertThat(last.toValue()).isEqualTo("RECEIVED_AT_WAREHOUSE");
         assertThat(last.performedBy()).isEqualTo("op-1");
     }
 
@@ -62,7 +63,7 @@ class OrderItemLifecycleTest extends ServiceTestSupport {
         OrderItem unassigned = view.items().stream()
                 .filter(i -> i.getImporterType() == com.example.mspedidos.domain.model.ImporterType.UNASSIGNED)
                 .findFirst().orElseThrow();
-        itemUseCase.changeStatus(orderId, unassigned.getId(), OrderItemStatus.PURCHASED, null, null);
+        forcePurchased(unassigned.getId());
         itemUseCase.changeStatus(orderId, unassigned.getId(), OrderItemStatus.RECEIVED_AT_WAREHOUSE,
                 com.example.mspedidos.domain.model.Warehouse.USA, null);
 
@@ -150,7 +151,7 @@ class OrderItemLifecycleTest extends ServiceTestSupport {
     void updateDetails_afterPurchased_conflict() {
         OrderView view = orderWithFourUnits();
         OrderItem unit = view.items().get(0);
-        itemUseCase.changeStatus(view.order().getId(), unit.getId(), OrderItemStatus.PURCHASED, null, null);
+        forcePurchased(unit.getId());
 
         assertThatThrownBy(() -> itemUseCase.updateDetails(view.order().getId(), unit.getId(), "X", "Y",
                 BigDecimal.ONE)).isInstanceOf(ItemNotEditableException.class);
@@ -162,7 +163,9 @@ class OrderItemLifecycleTest extends ServiceTestSupport {
         OrderView view = orderWithFourUnits();
         Long orderId = view.order().getId();
         OrderItem unit = view.items().get(0);
-        itemUseCase.changeStatus(orderId, unit.getId(), OrderItemStatus.PURCHASED, null, null);
+        forcePurchased(unit.getId());
+        itemUseCase.changeStatus(orderId, unit.getId(), OrderItemStatus.RECEIVED_AT_WAREHOUSE,
+                com.example.mspedidos.domain.model.Warehouse.USA, null);
         itemUseCase.changeStatus(orderId, unit.getId(), OrderItemStatus.CANCELLED, null, null);
 
         List<OrderItemHistoryEntry> history = itemUseCase.history(orderId, unit.getId());
@@ -202,6 +205,9 @@ class OrderItemLifecycleTest extends ServiceTestSupport {
         assertThat(found.order().getShippingMethod()).isEqualTo("SEA");
         assertThat(found.order().getItemsTotal()).isEqualByComparingTo("40.00");
         assertThat(found.items()).hasSize(4);
-        assertThat(orderUseCase.findAll()).hasSize(1);
+        List<OrderView> all = orderUseCase.findAll();
+        assertThat(all).hasSize(1);
+        assertThat(all.get(0).items()).extracting(OrderItem::getId)
+                .containsExactlyElementsOf(found.items().stream().map(OrderItem::getId).toList());
     }
 }

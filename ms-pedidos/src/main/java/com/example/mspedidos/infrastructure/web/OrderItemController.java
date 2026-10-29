@@ -1,20 +1,23 @@
 package com.example.mspedidos.infrastructure.web;
 
-import com.example.mspedidos.application.port.in.AllocationUndoUseCase;
 import com.example.mspedidos.application.port.in.InventoryAllocationUseCase;
 import com.example.mspedidos.application.port.in.OrderItemUseCase;
+import com.example.mspedidos.application.port.in.StatusChangeRequestUseCase;
+import com.example.mspedidos.domain.model.StatusChangeRequest;
+import com.example.mspedidos.domain.model.StatusChangeRequestStatus;
 import com.example.mspedidos.infrastructure.web.dto.AllocateInventoryRequest;
-import com.example.mspedidos.infrastructure.web.dto.AllocationUndoRequestResponse;
 import com.example.mspedidos.infrastructure.web.dto.UndoRequestCreateRequest;
 import com.example.mspedidos.infrastructure.web.dto.AssignImporterRequest;
 import com.example.mspedidos.infrastructure.web.dto.ChangeStatusRequest;
 import com.example.mspedidos.infrastructure.web.dto.HistoryEntryResponse;
 import com.example.mspedidos.infrastructure.web.dto.OrderItemResponse;
 import com.example.mspedidos.infrastructure.web.dto.OrderLineRequest;
+import com.example.mspedidos.infrastructure.web.dto.StatusChangeRequestResponse;
 import com.example.mspedidos.infrastructure.web.dto.UpdateItemRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -35,7 +38,7 @@ public class OrderItemController {
 
     private final OrderItemUseCase itemUseCase;
     private final InventoryAllocationUseCase allocationUseCase;
-    private final AllocationUndoUseCase undoUseCase;
+    private final StatusChangeRequestUseCase statusChangeRequests;
 
     @GetMapping
     public List<OrderItemResponse> findByOrder(@PathVariable Long orderId) {
@@ -80,11 +83,15 @@ public class OrderItemController {
         return OrderItemResponse.from(allocationUseCase.allocate(orderId, itemId, request.inventoryUnitId()));
     }
 
+    /** 201 si queda pendiente de aprobacion; 200 si el solicitante tiene permiso y se aplico en el acto. */
     @PostMapping("/{itemId}/allocation-undo-requests")
-    @ResponseStatus(HttpStatus.CREATED)
-    public AllocationUndoRequestResponse requestUndo(@PathVariable Long orderId, @PathVariable Long itemId,
-                                                     @Valid @RequestBody UndoRequestCreateRequest request) {
-        return AllocationUndoRequestResponse.from(undoUseCase.request(orderId, itemId, request.reason()));
+    public ResponseEntity<StatusChangeRequestResponse> requestUndo(@PathVariable Long orderId,
+                                                                   @PathVariable Long itemId,
+                                                                   @Valid @RequestBody UndoRequestCreateRequest request) {
+        StatusChangeRequest result = statusChangeRequests.requestAllocationUndo(orderId, itemId, request.reason());
+        HttpStatus status = result.getStatus() == StatusChangeRequestStatus.APPLIED_DIRECTLY
+                ? HttpStatus.OK : HttpStatus.CREATED;
+        return ResponseEntity.status(status).body(StatusChangeRequestResponse.from(result));
     }
 
     @GetMapping("/{itemId}/history")

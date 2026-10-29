@@ -18,6 +18,7 @@ import java.time.Instant;
 @Entity
 @Table(name = "order_items", indexes = {
         @Index(name = "idx_order_items_order", columnList = "order_id"),
+        @Index(name = "idx_order_items_purchase", columnList = "purchase_id"),
         @Index(name = "idx_order_items_importer_doc", columnList = "importer_document_type, importer_document_number")
 })
 @Getter
@@ -74,6 +75,9 @@ public class OrderItemJpaEntity {
 
     @Column(name = "inventory_unit_id")
     private Long inventoryUnitId;
+
+    @Column(name = "purchase_id")
+    private Long purchaseId;
 
     @Builder.Default
     @Column(name = "inventory_release_pending", nullable = false, columnDefinition = "boolean not null default false")

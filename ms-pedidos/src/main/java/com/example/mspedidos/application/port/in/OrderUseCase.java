@@ -9,7 +9,8 @@ public interface OrderUseCase {
 
     OrderView create(CreateOrderCommand command);
 
-    List<Order> findAll();
+    /** Todas las ordenes con sus unidades. */
+    List<OrderView> findAll();
 
     OrderView findById(Long id);
 

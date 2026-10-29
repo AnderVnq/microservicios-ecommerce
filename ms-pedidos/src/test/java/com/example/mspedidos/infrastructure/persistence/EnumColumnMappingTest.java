@@ -30,6 +30,6 @@ class EnumColumnMappingTest {
         assertThat(type("item_incidents", "type")).isEqualTo("CHARACTER VARYING");
         assertThat(type("item_incidents", "scope")).isEqualTo("CHARACTER VARYING");
         assertThat(type("item_incidents", "status")).isEqualTo("CHARACTER VARYING");
-        assertThat(type("allocation_undo_requests", "status")).isEqualTo("CHARACTER VARYING");
+        assertThat(type("status_change_requests", "status")).isEqualTo("CHARACTER VARYING");
     }
 }

@@ -5,6 +5,7 @@ import com.example.mspedidos.domain.exception.ImporterRequiredException;
 import com.example.mspedidos.domain.exception.InvalidStatusTransitionException;
 import com.example.mspedidos.domain.exception.ItemNotEditableException;
 import com.example.mspedidos.domain.exception.UndoNotAllowedException;
+import com.example.mspedidos.domain.exception.UsePurchaseFlowException;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -45,7 +46,7 @@ class OrderItemTest {
     @Test
     void advancesOnlyToNextStatus() {
         OrderItem item = unit();
-        item.changeStatus(OrderItemStatus.PURCHASED, null, null);
+        item.coverByPurchase(1L);
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.PURCHASED);
         assertThatThrownBy(() -> unit().changeStatus(OrderItemStatus.SHIPPED, null, null))
                 .isInstanceOf(InvalidStatusTransitionException.class);
@@ -277,5 +278,138 @@ class OrderItemTest {
         assertThatThrownBy(() -> item.coverFromInventory(1L, null)).isInstanceOf(IllegalArgumentException.class);
         assertThat(item.getInventoryUnitId()).isNull();
         assertThat(item.getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
+    }
+
+    private OrderItem purchased(Long purchaseId, Long unitId) {
+        return OrderItem.builder().status(OrderItemStatus.PURCHASED).importerType(ImporterType.UNASSIGNED)
+                .purchaseId(purchaseId).inventoryUnitId(unitId).build();
+    }
+
+    @Test
+    void coverByPurchase_onlyProcessingUncovered() {
+        OrderItem item = unit();
+        item.coverByPurchase(5L);
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.PURCHASED);
+        assertThat(item.getPurchaseId()).isEqualTo(5L);
+        assertThatThrownBy(() -> item.coverByPurchase(6L)).isInstanceOf(InvalidStatusTransitionException.class);
+        OrderItem withUnit = OrderItem.builder().status(OrderItemStatus.PROCESSING).inventoryUnitId(3L).build();
+        assertThatThrownBy(() -> withUnit.coverByPurchase(6L)).isInstanceOf(InvalidStatusTransitionException.class);
+        OrderItem pending = OrderItem.builder().status(OrderItemStatus.PROCESSING)
+                .inventoryReleasePending(true).build();
+        assertThatThrownBy(() -> pending.coverByPurchase(6L)).isInstanceOf(InvalidStatusTransitionException.class);
+    }
+
+    @Test
+    void linkPurchaseUnit_onlyWhenPurchasedWithPurchase() {
+        OrderItem item = unit();
+        item.coverByPurchase(5L);
+        item.linkPurchaseUnit(11L);
+        assertThat(item.getInventoryUnitId()).isEqualTo(11L);
+        OrderItem plain = unit();
+        assertThatThrownBy(() -> plain.linkPurchaseUnit(1L)).isInstanceOf(InvalidStatusTransitionException.class);
+    }
+
+    @Test
+    void receiveFromPurchase_setsUsa() {
+        OrderItem item = purchased(5L, 11L);
+        item.receiveFromPurchase();
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.RECEIVED_AT_WAREHOUSE);
+        assertThat(item.getWarehouse()).isEqualTo(Warehouse.USA);
+        assertThatThrownBy(() -> purchased(null, null).receiveFromPurchase())
+                .isInstanceOf(InvalidStatusTransitionException.class);
+    }
+
+    @Test
+    void revertNotReceived_clearsPurchaseAndUnit() {
+        OrderItem item = purchased(5L, 11L);
+        assertThat(item.revertNotReceived()).isEqualTo(11L);
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
+        assertThat(item.getPurchaseId()).isNull();
+        assertThat(item.getInventoryUnitId()).isNull();
+        assertThat(item.isInventoryReleasePending()).isFalse();
+        OrderItem noUnit = purchased(5L, null);
+        assertThat(noUnit.revertNotReceived()).isNull();
+        assertThatThrownBy(() -> unit().revertNotReceived()).isInstanceOf(InvalidStatusTransitionException.class);
+    }
+
+    @Test
+    void cancel_purchasedWithUnit_marksReleasePending() {
+        OrderItem item = purchased(5L, 11L);
+        item.cancel();
+        assertThat(item.isInventoryReleasePending()).isTrue();
+        assertThat(item.getPendingReleaseUnitId()).isEqualTo(11L);
+        OrderItem received = purchased(5L, 12L);
+        received.receiveFromPurchase();
+        assertThat(received.releasesInventoryOnCancel()).isTrue();
+    }
+
+    @Test
+    void cancel_purchasedWithoutUnit_noReleasePending() {
+        OrderItem item = purchased(5L, null);
+        item.cancel();
+        assertThat(item.isInventoryReleasePending()).isFalse();
+        assertThat(item.getPendingReleaseUnitId()).isNull();
+        assertThat(item.getStatus()).isEqualTo(OrderItemStatus.CANCELLED);
+    }
+
+    @Test
+    void canUndoAllocation_falseForPurchaseCovered() {
+        OrderItem item = purchased(5L, 11L);
+        item.receiveFromPurchase();
+        assertThat(item.isInPostAllocationState()).isTrue();
+        assertThat(item.canUndoAllocation()).isFalse();
+        assertThatThrownBy(item::undoInventoryCoverage).isInstanceOf(UndoNotAllowedException.class);
+        OrderItem allocated = OrderItem.builder().status(OrderItemStatus.RECEIVED_AT_WAREHOUSE)
+                .warehouse(Warehouse.USA).inventoryUnitId(2L).importerType(ImporterType.UNASSIGNED).build();
+        assertThat(allocated.canUndoAllocation()).isTrue();
+    }
+
+    @Test
+    void manualPatchToPurchased_usePurchaseFlow() {
+        assertThatThrownBy(() -> unit().changeStatus(OrderItemStatus.PURCHASED, null, null))
+                .isInstanceOf(UsePurchaseFlowException.class);
+    }
+
+    @Test
+    void manualReceive_withPurchase_usePurchaseFlow_withoutPurchase_ok() {
+        OrderItem withPurchase = purchased(5L, 11L);
+        assertThatThrownBy(() -> withPurchase.changeStatus(OrderItemStatus.RECEIVED_AT_WAREHOUSE, Warehouse.USA, null))
+                .isInstanceOf(UsePurchaseFlowException.class);
+        OrderItem legacy = purchased(null, null);
+        legacy.changeStatus(OrderItemStatus.RECEIVED_AT_WAREHOUSE, Warehouse.USA, null);
+        assertThat(legacy.getStatus()).isEqualTo(OrderItemStatus.RECEIVED_AT_WAREHOUSE);
+    }
+
+    @Test
+    void linkPurchaseUnit_afterArrival_allowed_cancelledRejected() {
+        OrderItem received = purchased(5L, null);
+        received.receiveFromPurchase();
+        received.linkPurchaseUnit(11L);
+        assertThat(received.getInventoryUnitId()).isEqualTo(11L);
+        OrderItem cancelled = purchased(5L, null);
+        cancelled.cancel();
+        assertThatThrownBy(() -> cancelled.linkPurchaseUnit(12L)).isInstanceOf(InvalidStatusTransitionException.class);
+    }
+
+    @Test
+    void flagReleaseOfUnlinkedPurchaseUnit_onlyCancelledWithoutUnit() {
+        OrderItem cancelled = purchased(5L, null);
+        cancelled.cancel();
+        cancelled.flagReleaseOfUnlinkedPurchaseUnit(11L);
+        assertThat(cancelled.isInventoryReleasePending()).isTrue();
+        assertThat(cancelled.getPendingReleaseUnitId()).isEqualTo(11L);
+        assertThat(cancelled.getInventoryUnitId()).isNull();
+
+        assertThatThrownBy(() -> purchased(5L, null).flagReleaseOfUnlinkedPurchaseUnit(11L))
+                .isInstanceOf(InvalidStatusTransitionException.class);
+        OrderItem linked = purchased(5L, 3L);
+        linked.cancel();
+        assertThatThrownBy(() -> linked.flagReleaseOfUnlinkedPurchaseUnit(11L))
+                .isInstanceOf(InvalidStatusTransitionException.class);
+        // ya pendiente de liberar otra unidad: no se pisa la marca
+        assertThatThrownBy(() -> cancelled.flagReleaseOfUnlinkedPurchaseUnit(12L))
+                .isInstanceOf(InvalidStatusTransitionException.class);
+        assertThatThrownBy(() -> cancelled.flagReleaseOfUnlinkedPurchaseUnit(null))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }

@@ -14,8 +14,29 @@ RUN mvn -q -pl ms-pedidos -am dependency:go-offline
 COPY ms-pedidos/src ms-pedidos/src
 RUN mvn -q -pl ms-pedidos -am -DskipTests package
 
-FROM eclipse-temurin:17-jre-jammy
+# Separa el jar en capas de Spring Boot (dependencias, loader, snapshots, aplicacion)
+RUN cp ms-pedidos/target/*.jar app.jar \
+    && java -Djarmode=tools -jar app.jar extract --layers --destination extracted
+
+# JRE minimo: modulos que detecta jdeps + los que se cargan por reflexion
+RUN jdeps --ignore-missing-deps -q --recursive --multi-release 17 --print-module-deps \
+        --class-path "$(find extracted -path '*/lib/*.jar' | tr '\n' ':')" \
+        extracted/application/app.jar > modules.txt \
+    && jlink --add-modules "$(cat modules.txt),jdk.crypto.ec,jdk.unsupported,jdk.management,jdk.zipfs,jdk.charsets,jdk.localedata,java.instrument,java.naming,java.security.jgss" \
+        --include-locales=en,es \
+        --strip-debug --no-man-pages --no-header-files --compress=2 \
+        --output /jre
+
+# Distroless: solo glibc + certificados, sin shell ni gestor de paquetes; corre como nonroot
+FROM gcr.io/distroless/base-debian12:nonroot
+ENV JAVA_HOME=/opt/java
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+COPY --from=build /jre ${JAVA_HOME}
 WORKDIR /app
-COPY --from=build /workspace/ms-pedidos/target/*.jar app.jar
+# De menos a mas cambiante: un cambio de codigo solo reconstruye la ultima capa
+COPY --from=build /workspace/extracted/dependencies/ ./
+COPY --from=build /workspace/extracted/spring-boot-loader/ ./
+COPY --from=build /workspace/extracted/snapshot-dependencies/ ./
+COPY --from=build /workspace/extracted/application/ ./
 EXPOSE 8083
 ENTRYPOINT ["java", "-jar", "app.jar"]

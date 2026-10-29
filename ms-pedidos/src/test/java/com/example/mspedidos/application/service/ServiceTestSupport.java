@@ -35,9 +35,10 @@ import static org.mockito.Mockito.when;
 /**
  * Base de los tests de servicio: contexto real sobre H2, sin {@code @Transactional} (cada operacion confirma
  * de verdad), con ms-clientes, ms-inventory y el actor mockeados. Las tablas se limpian antes de cada test.
- * El job de liberaciones queda con un intervalo enorme para que no corra en paralelo a los tests.
+ * Los jobs de liberaciones y de sincronizacion quedan con un intervalo enorme para que no corran en paralelo a los tests.
  */
-@SpringBootTest(properties = "orders.inventory-release-job.delay-ms=86400000")
+@SpringBootTest(properties = {"orders.inventory-release-job.delay-ms=86400000",
+        "orders.inventory-sync-job.delay-ms=86400000"})
 abstract class ServiceTestSupport {
 
     static final int YEAR = 2026;
@@ -64,11 +65,12 @@ abstract class ServiceTestSupport {
 
     @BeforeEach
     void cleanDatabaseAndStubActor() {
-        jdbc.update("delete from allocation_undo_requests");
+        jdbc.update("delete from status_change_requests");
         jdbc.update("delete from order_item_history");
         jdbc.update("delete from item_incidents");
         jdbc.update("delete from order_items");
         jdbc.update("delete from orders");
+        jdbc.update("delete from suppliers");
         when(actorProvider.currentActor()).thenReturn("op-1");
     }
 
@@ -144,5 +146,10 @@ abstract class ServiceTestSupport {
 
     long itemCount() {
         return jdbc.queryForObject("select count(*) from order_items", Long.class);
+    }
+
+    /** Deja la unidad en PURCHASED sin compra asociada (el PATCH manual a PURCHASED ya no existe). */
+    protected void forcePurchased(Long itemId) {
+        jdbc.update("update order_items set status = 'PURCHASED' where id = ?", itemId);
     }
 }

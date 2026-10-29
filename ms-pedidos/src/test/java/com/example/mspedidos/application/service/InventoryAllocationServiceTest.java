@@ -194,7 +194,7 @@ class InventoryAllocationServiceTest extends ServiceTestSupport {
         OrderView view = orderWithFourUnits();
         Long orderId = view.order().getId();
         OrderItem purchased = view.items().get(0);
-        itemUseCase.changeStatus(orderId, purchased.getId(), OrderItemStatus.PURCHASED, null, null);
+        forcePurchased(purchased.getId());
 
         assertThat(catchThrowable(() -> allocation.allocate(orderId, purchased.getId(), UNIT)))
                 .isInstanceOf(InvalidStatusTransitionException.class);
@@ -284,7 +284,7 @@ class InventoryAllocationServiceTest extends ServiceTestSupport {
         OrderItem unit = view.items().get(0);
         // otro operador avanza la unidad mientras inventario asigna
         when(inventoryPort.allocate(anyLong(), anyLong(), anyString())).thenAnswer(inv -> {
-            itemUseCase.changeStatus(orderId, unit.getId(), OrderItemStatus.PURCHASED, null, null);
+            forcePurchased(unit.getId());
             return new AllocatedUnit(UNIT, Warehouse.USA, "NEW", BigDecimal.TEN);
         });
 
@@ -462,7 +462,7 @@ class InventoryAllocationServiceTest extends ServiceTestSupport {
         jdbc.update("update order_items set inventory_release_pending = true, pending_release_unit_id = ? "
                 + "where id = ?", 778L, unit.getId());
 
-        itemUseCase.changeStatus(orderId, unit.getId(), OrderItemStatus.PURCHASED, null, null);
+        forcePurchased(unit.getId());
 
         verifyNoInteractions(inventoryPort);
         assertThat(reload(unit).isInventoryReleasePending()).isTrue();

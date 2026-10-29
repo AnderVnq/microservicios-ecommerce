@@ -8,10 +8,14 @@ import com.example.mspedidos.domain.exception.ClientesUnavailableException;
 import com.example.mspedidos.domain.exception.NotFoundException;
 import com.example.mspedidos.domain.exception.PersonNotFoundException;
 import lombok.extern.slf4j.Slf4j;
+import com.example.mspedidos.domain.exception.IdempotencyKeyReusedException;
+import com.example.mspedidos.domain.exception.PurchaseQuantityExceededException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
@@ -82,6 +86,34 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleAuthUnavailable(AuthUnavailableException ex) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(ApiError.of("AUTH_UNAVAILABLE", ex.getMessage()));
+    }
+
+    @ExceptionHandler(IdempotencyKeyReusedException.class)
+    public ResponseEntity<ApiError> handleIdempotencyKeyReused(IdempotencyKeyReusedException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(ApiError.of("IDEMPOTENCY_KEY_REUSED", ex.getMessage()));
+    }
+
+    @ExceptionHandler(PurchaseQuantityExceededException.class)
+    public ResponseEntity<ApiError> handlePurchaseQuantityExceeded(PurchaseQuantityExceededException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(ApiError.of("PURCHASE_QUANTITY_EXCEEDED", ex.getMessage()));
+    }
+
+    /** Falta una cabecera obligatoria (p. ej. {@code Idempotency-Key}). */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ApiError> handleMissingHeader(MissingRequestHeaderException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(new ApiError("VALIDATION_ERROR", "Datos invalidos",
+                        "Falta la cabecera obligatoria " + ex.getHeaderName()));
+    }
+
+    /** Bloqueo/deadlock de BD que persistio tras los reintentos: el cliente puede reintentar. */
+    @ExceptionHandler(PessimisticLockingFailureException.class)
+    public ResponseEntity<ApiError> handleLockConflict(PessimisticLockingFailureException ex) {
+        log.warn("Conflicto de bloqueo -> 409", ex);
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(ApiError.of("LOCK_CONFLICT", "Recurso en uso por otra operacion, reintente"));
     }
 
     /** Invariantes de dominio (motivo/nota vacios, etc.). */

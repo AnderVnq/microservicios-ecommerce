@@ -3,6 +3,7 @@ package com.example.mspedidos.application.port.out;
 import com.example.mspedidos.domain.model.ImporterDocument;
 import com.example.mspedidos.domain.model.OrderItem;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -17,6 +18,9 @@ public interface OrderItemRepositoryPort {
     Optional<OrderItem> findByIdAndOrderId(Long itemId, Long orderId);
 
     List<OrderItem> findByOrderId(Long orderId);
+
+    /** Unidades de varias ordenes en una sola consulta, por id ascendente. */
+    List<OrderItem> findByOrderIds(Collection<Long> orderIds);
 
     /** Como {@link #findByIdAndOrderId} pero con lock pesimista de escritura; requiere transaccion. */
     Optional<OrderItem> findByIdAndOrderIdForUpdate(Long itemId, Long orderId);
@@ -36,4 +40,23 @@ public interface OrderItemRepositoryPort {
 
     /** Unidades filtradas por {@code inventory_release_pending}; {@code null} no filtra. Por id ascendente. */
     List<OrderItem> search(Boolean inventoryReleasePending);
+
+    /**
+     * Ids de unidades {@code PROCESSING} del sku sin compra ni unidad fisica, sin marca de liberacion y sin
+     * solicitud {@code PENDING}, de la mas urgente a la menos (fecha limite asc nulls last, fecha de orden, id).
+     * Sin lock.
+     */
+    List<Long> findCoverableIdsByUrgency(String sku, int limit);
+
+    /** Unidades por id ascendente con lock pesimista de escritura; requiere transaccion. */
+    List<OrderItem> findByIdsForUpdate(Collection<Long> ids);
+
+    /** Unidades cubiertas por la compra, por id ascendente. Sin lock. */
+    List<OrderItem> findByPurchaseId(Long purchaseId);
+
+    /** Unidades cubiertas por la compra, por id ascendente, con lock pesimista; requiere transaccion. */
+    List<OrderItem> findByPurchaseIdForUpdate(Long purchaseId);
+
+    /** Los mismos ids ordenados de la mas urgente a la menos. */
+    List<Long> orderByUrgency(Collection<Long> itemIds);
 }

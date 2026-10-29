@@ -32,6 +32,8 @@ orders:
     max-units-per-year: 3
   inventory-release-job:
     delay-ms: 60000
+  inventory-sync-job:
+    delay-ms: 60000
 
 clientes:
   base-url: ${CLIENTES_SERVICE_URI:http://localhost:8082}
