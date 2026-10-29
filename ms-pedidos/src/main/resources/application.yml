@@ -20,14 +20,16 @@ spring:
       resourceserver:
         jwt:
           jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8180/realms/microservicios/protocol/openid-connect/certs}
-  rabbitmq:
-    host: ${RABBITMQ_HOST:localhost}
-    port: ${RABBITMQ_PORT:5672}
-    username: ${RABBITMQ_USER:app}
-    password: ${RABBITMQ_PASSWORD:app}
 
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,rabbit
+        include: health,info
+
+orders:
+  importer-quota:
+    max-units-per-year: 3
+
+clientes:
+  base-url: ${CLIENTES_SERVICE_URI:http://localhost:8082}
