@@ -9,8 +9,7 @@ import java.time.Instant;
 
 /**
  * Cliente titular. No pertenece a un unico market: puede generar pedidos en
- * distintos markets, pero su cupo de importaciones es global y se comparte
- * con sus familiares asociados (ver {@link Familiar}).
+ * distintos markets. Sus familiares asociados se modelan en {@link Familiar}.
  */
 @Getter
 @Setter
@@ -26,19 +25,12 @@ public class Cliente {
     private String email;
     private String telefono;
 
-    /** Cupo maximo de importaciones (regla de negocio actual: 3), compartido con familiares. */
-    private int maxImportaciones;
-
-    /** Importaciones ya consumidas por el titular y sus familiares. */
-    private int importacionesUsadas;
-
     private boolean activo;
     private Instant createdAt;
     private Instant updatedAt;
 
     public static Cliente createNew(String nombres, String apellidos, String tipoDocumento,
-                                     String numeroDocumento, String email, String telefono,
-                                     int maxImportaciones) {
+                                     String numeroDocumento, String email, String telefono) {
         return Cliente.builder()
                 .nombres(nombres)
                 .apellidos(apellidos)
@@ -46,14 +38,8 @@ public class Cliente {
                 .numeroDocumento(numeroDocumento)
                 .email(email)
                 .telefono(telefono)
-                .maxImportaciones(maxImportaciones)
-                .importacionesUsadas(0)
                 .activo(true)
                 .build();
-    }
-
-    public int getCupoDisponible() {
-        return maxImportaciones - importacionesUsadas;
     }
 
     public void actualizarDatos(String nombres, String apellidos, String email, String telefono) {

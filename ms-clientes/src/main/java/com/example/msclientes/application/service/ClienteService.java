@@ -6,7 +6,6 @@ import com.example.msclientes.domain.model.Cliente;
 import com.example.msclientes.application.port.in.ClienteUseCase;
 import com.example.msclientes.application.port.out.ClienteRepositoryPort;
 import lombok.RequiredArgsConstructor;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,9 +17,6 @@ import java.util.List;
 public class ClienteService implements ClienteUseCase {
 
     private final ClienteRepositoryPort clienteRepository;
-
-    @Value("${clientes.max-importaciones-default:3}")
-    private int maxImportacionesDefault;
 
     @Override
     public List<Cliente> findAll() {
@@ -41,7 +37,7 @@ public class ClienteService implements ClienteUseCase {
             throw new ClienteAlreadyExistsException(numeroDocumento);
         }
         Cliente cliente = Cliente.createNew(nombres, apellidos, tipoDocumento, numeroDocumento,
-                email, telefono, maxImportacionesDefault);
+                email, telefono);
         return clienteRepository.save(cliente);
     }
 

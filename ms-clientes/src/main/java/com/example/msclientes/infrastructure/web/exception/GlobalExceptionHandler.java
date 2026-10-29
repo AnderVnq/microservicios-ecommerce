@@ -2,7 +2,6 @@ package com.example.msclientes.infrastructure.web.exception;
 
 import com.example.msclientes.domain.exception.ClienteAlreadyExistsException;
 import com.example.msclientes.domain.exception.ClienteNotFoundException;
-import com.example.msclientes.domain.exception.CupoImportacionAgotadoException;
 import com.example.msclientes.domain.exception.FamiliarNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -25,12 +24,6 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleConflict(ClienteAlreadyExistsException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .body(ApiError.of("CONFLICT", ex.getMessage()));
-    }
-
-    @ExceptionHandler(CupoImportacionAgotadoException.class)
-    public ResponseEntity<ApiError> handleCupoAgotado(CupoImportacionAgotadoException ex) {
-        return ResponseEntity.status(HttpStatus.CONFLICT)
-                .body(ApiError.of("CUPO_IMPORTACION_AGOTADO", ex.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

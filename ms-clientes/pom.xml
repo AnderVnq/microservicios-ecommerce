@@ -13,7 +13,7 @@
     <artifactId>ms-clientes</artifactId>
     <packaging>jar</packaging>
     <name>ms-clientes</name>
-    <description>Microservicio de Clientes: titulares, familiares asociados y cupo de importaciones</description>
+    <description>Microservicio de Clientes: titulares y familiares asociados</description>
 
     <dependencies>
         <dependency>
@@ -35,10 +35,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

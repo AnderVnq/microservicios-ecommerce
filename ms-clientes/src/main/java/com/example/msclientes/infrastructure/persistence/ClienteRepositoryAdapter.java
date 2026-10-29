@@ -35,16 +35,6 @@ class ClienteRepositoryAdapter implements ClienteRepositoryPort {
         return toDomain(saved);
     }
 
-    @Override
-    public boolean reservarUnidadCupo(Long clienteId) {
-        return jpaRepository.reservarUnidadCupo(clienteId) > 0;
-    }
-
-    @Override
-    public void liberarUnidadCupo(Long clienteId) {
-        jpaRepository.liberarUnidadCupo(clienteId);
-    }
-
     private Cliente toDomain(ClienteJpaEntity entity) {
         return Cliente.builder()
                 .id(entity.getId())
@@ -54,8 +44,6 @@ class ClienteRepositoryAdapter implements ClienteRepositoryPort {
                 .numeroDocumento(entity.getNumeroDocumento())
                 .email(entity.getEmail())
                 .telefono(entity.getTelefono())
-                .maxImportaciones(entity.getMaxImportaciones())
-                .importacionesUsadas(entity.getImportacionesUsadas())
                 .activo(entity.isActivo())
                 .createdAt(entity.getCreatedAt())
                 .updatedAt(entity.getUpdatedAt())
@@ -71,8 +59,6 @@ class ClienteRepositoryAdapter implements ClienteRepositoryPort {
                 .numeroDocumento(cliente.getNumeroDocumento())
                 .email(cliente.getEmail())
                 .telefono(cliente.getTelefono())
-                .maxImportaciones(cliente.getMaxImportaciones())
-                .importacionesUsadas(cliente.getImportacionesUsadas())
                 .activo(cliente.isActivo())
                 .createdAt(cliente.getCreatedAt())
                 .updatedAt(cliente.getUpdatedAt())

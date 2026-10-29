@@ -9,7 +9,7 @@ import java.time.Instant;
 
 /**
  * Familiar asociado a un cliente titular. Puede generar pedidos propios,
- * pero consume el mismo cupo de importaciones del titular (clienteId).
+ * identificado por el titular (clienteId).
  */
 @Getter
 @Setter

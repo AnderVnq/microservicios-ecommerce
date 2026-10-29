@@ -10,16 +10,12 @@ public record ClienteResponse(
         String numeroDocumento,
         String email,
         String telefono,
-        int maxImportaciones,
-        int importacionesUsadas,
-        int cupoDisponible,
         boolean activo
 ) {
     public static ClienteResponse from(Cliente c) {
         return new ClienteResponse(
                 c.getId(), c.getNombres(), c.getApellidos(), c.getTipoDocumento(), c.getNumeroDocumento(),
-                c.getEmail(), c.getTelefono(), c.getMaxImportaciones(), c.getImportacionesUsadas(),
-                c.getCupoDisponible(), c.isActivo()
+                c.getEmail(), c.getTelefono(), c.isActivo()
         );
     }
 }

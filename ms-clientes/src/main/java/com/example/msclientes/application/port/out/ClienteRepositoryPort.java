@@ -14,10 +14,4 @@ public interface ClienteRepositoryPort {
     boolean existsByDocumento(String tipoDocumento, String numeroDocumento);
 
     Cliente save(Cliente cliente);
-
-    /** Incrementa atomicamente el consumo del cupo solo si hay disponibilidad. True si tuvo exito. */
-    boolean reservarUnidadCupo(Long clienteId);
-
-    /** Decrementa atomicamente el consumo del cupo (nunca por debajo de cero). */
-    void liberarUnidadCupo(Long clienteId);
 }

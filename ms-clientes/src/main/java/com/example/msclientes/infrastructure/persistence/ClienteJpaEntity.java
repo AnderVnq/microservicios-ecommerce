@@ -38,12 +38,6 @@ public class ClienteJpaEntity {
 
     private String telefono;
 
-    @Column(name = "max_importaciones", nullable = false)
-    private int maxImportaciones;
-
-    @Column(name = "importaciones_usadas", nullable = false)
-    private int importacionesUsadas;
-
     @Column(nullable = false)
     private boolean activo;
 

@@ -13,8 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * Un familiar siempre esta asociado a un unico cliente titular y comparte
- * su cupo de importaciones (ver CupoImportacionService).
+ * Un familiar siempre esta asociado a un unico cliente titular (titular).
  */
 @Service
 @RequiredArgsConstructor
