@@ -89,6 +89,7 @@ services:
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
       CLIENTES_SERVICE_URI: http://ms-clientes:8082
       INVENTORY_SERVICE_URI: http://ms-inventory:8085
+      PRODUCTS_SERVICE_URI: http://ms-products:8086
       AUTH_SERVICE_URI: http://ms-auth:8084
       KEYCLOAK_TOKEN_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/token
       PEDIDOS_CLIENT_SECRET: ${PEDIDOS_CLIENT_SECRET:-ms-pedidos-secret}
@@ -102,6 +103,8 @@ services:
       ms-clientes:
         condition: service_started
       ms-inventory:
+        condition: service_started
+      ms-products:
         condition: service_started
       ms-auth:
         condition: service_started
@@ -117,12 +120,37 @@ services:
       DB_USER: ${DB_USER:-app}
       DB_PASSWORD: ${DB_PASSWORD:-app}
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
+      PRODUCTS_SERVICE_URI: http://ms-products:8086
     ports:
       - "8085:8085"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
       keycloak:
+        condition: service_started
+      ms-products:
+        condition: service_started
+
+  ms-products:
+    build:
+      context: .
+      dockerfile: ms-products/Dockerfile
+    container_name: ms-products
+    restart: unless-stopped
+    environment:
+      DB_URL: jdbc:mysql://${DB_HOST:-host.docker.internal}:${DB_PORT:-3306}/products_db?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
+      DB_USER: ${DB_USER:-app}
+      DB_PASSWORD: ${DB_PASSWORD:-app}
+      MARKETS_SERVICE_URI: http://ms-markets:8081
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
+    ports:
+      - "8086:8086"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      keycloak:
+        condition: service_started
+      ms-markets:
         condition: service_started
 
   ms-auth:
@@ -156,6 +184,7 @@ services:
       PEDIDOS_SERVICE_URI: http://ms-pedidos:8083
       AUTH_SERVICE_URI: http://ms-auth:8084
       INVENTORY_SERVICE_URI: http://ms-inventory:8085
+      PRODUCTS_SERVICE_URI: http://ms-products:8086
       KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/microservicios/protocol/openid-connect/certs
     ports:
       - "8080:8080"
@@ -165,4 +194,5 @@ services:
       - ms-pedidos
       - ms-auth
       - ms-inventory
+      - ms-products
       - keycloak
