@@ -1,0 +1,34 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: ms-products
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/products_db?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true}
+    username: ${DB_USER:app}
+    password: ${DB_PASSWORD:app}
+    hikari:
+      # Instant se escribe/lee en UTC y la sesion MySQL (NOW(6) de los triggers) tambien,
+      # sin importar la URL ni la zona de la JVM o del servidor
+      data-source-properties:
+        connectionTimeZone: UTC
+        forceConnectionTimeZoneToSession: true
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://localhost:8180/realms/microservicios/protocol/openid-connect/certs}
+
+markets:
+  base-url: ${MARKETS_SERVICE_URI:http://localhost:8081}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
