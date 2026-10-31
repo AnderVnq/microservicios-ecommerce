@@ -8,6 +8,7 @@ COPY ms-markets/pom.xml ms-markets/pom.xml
 COPY ms-clientes/pom.xml ms-clientes/pom.xml
 COPY ms-pedidos/pom.xml ms-pedidos/pom.xml
 COPY ms-inventory/pom.xml ms-inventory/pom.xml
+COPY ms-products/pom.xml ms-products/pom.xml
 COPY ms_auth/pom.xml ms_auth/pom.xml
 RUN mvn -q -pl ms-markets -am dependency:go-offline
 
