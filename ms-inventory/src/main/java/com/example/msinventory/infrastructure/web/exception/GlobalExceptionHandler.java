@@ -3,6 +3,8 @@ package com.example.msinventory.infrastructure.web.exception;
 import com.example.msinventory.domain.exception.BusinessRuleException;
 import com.example.msinventory.domain.exception.IdempotencyKeyReusedException;
 import com.example.msinventory.domain.exception.NotFoundException;
+import com.example.msinventory.domain.exception.ProductsUnavailableException;
+import com.example.msinventory.domain.exception.UnknownSkuException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -60,6 +62,18 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleKeyReused(IdempotencyKeyReusedException ex) {
         return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
                 .body(ApiError.of("IDEMPOTENCY_KEY_REUSED", ex.getMessage()));
+    }
+
+    @ExceptionHandler(UnknownSkuException.class)
+    public ResponseEntity<ApiError> handleUnknownSku(UnknownSkuException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_CONTENT)
+                .body(new ApiError("VALIDATION_ERROR", ex.getMessage(), ex.getMessage()));
+    }
+
+    @ExceptionHandler(ProductsUnavailableException.class)
+    public ResponseEntity<ApiError> handleProductsUnavailable(ProductsUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiError.of("PRODUCTS_UNAVAILABLE", ex.getMessage()));
     }
 
     @ExceptionHandler(NotFoundException.class)

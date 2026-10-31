@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
-class PurchaseEntryServiceTest {
+class PurchaseEntryServiceTest extends com.example.msinventory.ProductsStubbedTest {
 
     private static final Long PURCHASE = 500L;
 
@@ -76,6 +76,13 @@ class PurchaseEntryServiceTest {
 
     private long total(String table) {
         return jdbc.queryForObject("select count(*) from " + table, Long.class);
+    }
+
+    @Test
+    void purchaseEntry_doesNotCallProducts() {
+        create(1, List.of());
+
+        org.mockito.Mockito.verifyNoInteractions(products);
     }
 
     @Test

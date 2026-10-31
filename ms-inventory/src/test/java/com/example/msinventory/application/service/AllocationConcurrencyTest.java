@@ -29,7 +29,7 @@ import static org.mockito.Mockito.when;
 
 /** No transaccional a proposito: cada hilo abre su propia transaccion. */
 @SpringBootTest
-class AllocationConcurrencyTest {
+class AllocationConcurrencyTest extends com.example.msinventory.ProductsStubbedTest {
 
     @Autowired AllocationUseCase service;
     @Autowired InventoryEntryUseCase entryService;

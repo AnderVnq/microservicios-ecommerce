@@ -26,6 +26,9 @@ inventory:
     # Solo el client credentials de este client id puede asignar/liberar unidades (claim azp del JWT).
     allowed-client-id: ${INVENTORY_ALLOCATION_ALLOWED_CLIENT_ID:ms-pedidos}
 
+products:
+  base-url: ${PRODUCTS_SERVICE_URI:http://localhost:8086}
+
 management:
   endpoints:
     web:

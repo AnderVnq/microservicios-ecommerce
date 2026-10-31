@@ -4,6 +4,8 @@ import com.example.msinventory.application.port.in.EntryResult;
 import com.example.msinventory.application.port.in.InventoryEntryUseCase;
 import com.example.msinventory.application.port.in.RegisterEntryCommand;
 import com.example.msinventory.domain.exception.IdempotencyKeyReusedException;
+import com.example.msinventory.domain.exception.ProductsUnavailableException;
+import com.example.msinventory.domain.exception.UnknownSkuException;
 import com.example.msinventory.domain.model.EntryType;
 import com.example.msinventory.domain.model.InventoryEntry;
 import com.example.msinventory.domain.model.InventoryUnit;
@@ -80,6 +82,27 @@ class InventoryEntryControllerTest {
         assertThat(cmd.getValue().quantity()).isEqualTo(2);
         assertThat(cmd.getValue().unitCost()).isEqualByComparingTo("10.50");
         assertThat(cmd.getValue().warehouse()).isEqualTo(Warehouse.USA);
+    }
+
+    @Test
+    void registerEntry_unknownSku_422() throws Exception {
+        when(entries.register(any(), any(), any())).thenThrow(new UnknownSkuException("El SKU no existe en el catalogo"));
+
+        mvc.perform(post("/api/v1/inventory/entries").with(jwt()).header("Idempotency-Key", "k")
+                        .contentType(MediaType.APPLICATION_JSON).content(BODY))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.message").value("El SKU no existe en el catalogo"));
+    }
+
+    @Test
+    void registerEntry_productsDown_503() throws Exception {
+        when(entries.register(any(), any(), any())).thenThrow(new ProductsUnavailableException("caido"));
+
+        mvc.perform(post("/api/v1/inventory/entries").with(jwt()).header("Idempotency-Key", "k")
+                        .contentType(MediaType.APPLICATION_JSON).content(BODY))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("PRODUCTS_UNAVAILABLE"));
     }
 
     @Test

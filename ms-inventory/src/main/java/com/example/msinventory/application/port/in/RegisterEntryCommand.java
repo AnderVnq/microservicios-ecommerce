@@ -23,4 +23,11 @@ public record RegisterEntryCommand(
         String supplierPurchaseId,
         String sourceReference,
         String reason) {
+
+    /** Copia con otro sku (p. ej. la escritura canonica del catalogo). */
+    public RegisterEntryCommand withSku(String newSku) {
+        return new RegisterEntryCommand(entryType, newSku, conditionCode, warehouse, quantity, unitCost, costCurrency,
+                status, expectedArrivalDate, supplierReturnDeadline, invoiceNumber, supplierPurchaseId,
+                sourceReference, reason);
+    }
 }

@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
-class InventoryUnitServiceTest {
+class InventoryUnitServiceTest extends com.example.msinventory.ProductsStubbedTest {
 
     @Autowired InventoryUnitUseCase service;
     @Autowired InventoryEntryUseCase entryService;

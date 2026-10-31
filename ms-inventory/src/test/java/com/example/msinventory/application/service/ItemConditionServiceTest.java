@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
-class ItemConditionServiceTest {
+class ItemConditionServiceTest extends com.example.msinventory.ProductsStubbedTest {
 
     @Autowired ItemConditionUseCase conditions;
     @Autowired InventoryEntryUseCase entries;

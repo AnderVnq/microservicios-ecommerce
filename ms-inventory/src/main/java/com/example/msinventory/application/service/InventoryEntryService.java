@@ -7,6 +7,8 @@ import com.example.msinventory.application.port.out.ActorProvider;
 import com.example.msinventory.application.port.out.InventoryEntryRepositoryPort;
 import com.example.msinventory.application.port.out.InventoryUnitRepositoryPort;
 import com.example.msinventory.application.port.out.ItemConditionRepositoryPort;
+import com.example.msinventory.application.port.out.ProductsPort;
+import com.example.msinventory.domain.exception.UnknownSkuException;
 import com.example.msinventory.domain.exception.ConditionInactiveException;
 import com.example.msinventory.domain.exception.ConditionNotFoundException;
 import com.example.msinventory.domain.exception.IdempotencyKeyReusedException;
@@ -33,21 +35,24 @@ public class InventoryEntryService implements InventoryEntryUseCase {
     private final ItemConditionRepositoryPort conditions;
     private final MovementRecorder recorder;
     private final ActorProvider actorProvider;
+    private final ProductsPort products;
     private final TransactionTemplate tx;
 
     public InventoryEntryService(InventoryEntryRepositoryPort entries, InventoryUnitRepositoryPort units,
                                  ItemConditionRepositoryPort conditions, MovementRecorder recorder,
-                                 ActorProvider actorProvider, PlatformTransactionManager transactionManager) {
+                                 ActorProvider actorProvider, ProductsPort products,
+                                 PlatformTransactionManager transactionManager) {
         this.entries = entries;
         this.units = units;
         this.conditions = conditions;
         this.recorder = recorder;
         this.actorProvider = actorProvider;
+        this.products = products;
         this.tx = new TransactionTemplate(transactionManager);
     }
 
     @Override
-    public EntryResult register(String idempotencyKey, String requestHash, RegisterEntryCommand cmd) {
+    public EntryResult register(String idempotencyKey, String requestHash, RegisterEntryCommand request) {
         if (idempotencyKey == null || idempotencyKey.isBlank()) {
             throw new IllegalArgumentException("La cabecera Idempotency-Key es obligatoria");
         }
@@ -55,7 +60,12 @@ public class InventoryEntryService implements InventoryEntryUseCase {
         if (existing.isPresent()) {
             return replay(existing.get(), requestHash);
         }
-        validate(cmd);
+        validate(request);
+        // Llamada remota antes de abrir la transaccion. Se guarda la escritura del catalogo: la asignacion compara
+        // el SKU de la unidad de pedido (escritura del catalogo) distinguiendo mayusculas.
+        String canonicalSku = products.canonicalSku(request.sku().trim())
+                .orElseThrow(() -> new UnknownSkuException("El SKU no existe en el catalogo"));
+        RegisterEntryCommand cmd = request.withSku(canonicalSku);
         try {
             return tx.execute(status -> create(idempotencyKey, requestHash, cmd));
         } catch (DataIntegrityViolationException e) {

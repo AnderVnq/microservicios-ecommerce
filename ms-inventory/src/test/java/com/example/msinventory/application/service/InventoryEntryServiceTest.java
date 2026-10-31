@@ -1,6 +1,9 @@
 package com.example.msinventory.application.service;
 
+import com.example.msinventory.ProductsStubbedTest;
 import com.example.msinventory.application.port.in.EntryResult;
+import com.example.msinventory.domain.exception.ProductsUnavailableException;
+import com.example.msinventory.domain.exception.UnknownSkuException;
 import com.example.msinventory.application.port.in.InventoryEntryUseCase;
 import com.example.msinventory.application.port.in.RegisterEntryCommand;
 import com.example.msinventory.application.port.out.ActorProvider;
@@ -34,7 +37,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 @SpringBootTest
-class InventoryEntryServiceTest {
+class InventoryEntryServiceTest extends ProductsStubbedTest {
 
     @Autowired InventoryEntryUseCase service;
     @Autowired InventoryMovementRepositoryPort movements;
@@ -62,6 +65,40 @@ class InventoryEntryServiceTest {
 
     private RegisterEntryCommand inTransit(int qty) {
         return purchase(qty, InventoryUnitStatus.IN_TRANSIT, LocalDate.now().plusDays(5), null);
+    }
+
+    @Test
+    void entry_unknownSku_422_nothingWritten() {
+        when(products.canonicalSku("SKU-1")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service.register("key-x", "h", inTransit(2)))
+                .isInstanceOf(UnknownSkuException.class)
+                .hasMessage("El SKU no existe en el catalogo");
+
+        assertThat(count("inventory_entries")).isZero();
+        assertThat(count("inventory_units")).isZero();
+        assertThat(count("inventory_movements")).isZero();
+    }
+
+    @Test
+    void entry_productsDown_503() {
+        when(products.canonicalSku("SKU-1")).thenThrow(new ProductsUnavailableException("caido"));
+
+        assertThatThrownBy(() -> service.register("key-y", "h", inTransit(2)))
+                .isInstanceOf(ProductsUnavailableException.class);
+        assertThat(count("inventory_entries")).isZero();
+    }
+
+    @Test
+    void entry_typedSkuDifferentCase_storesCatalogSpelling() {
+        // catalogo: ABC-1; el operador teclea " abc-1 " -> se valida recortado y las unidades quedan como ABC-1
+        when(products.canonicalSku("abc-1")).thenReturn(Optional.of("ABC-1"));
+
+        EntryResult r = service.register("key-case", "h", inTransit(2).withSku(" abc-1 "));
+
+        assertThat(r.units()).hasSize(2).allSatisfy(u -> assertThat(u.getSku()).isEqualTo("ABC-1"));
+        assertThat(jdbc.queryForList("select sku from inventory_units", String.class))
+                .containsOnly("ABC-1");
     }
 
     private long count(String table) {
