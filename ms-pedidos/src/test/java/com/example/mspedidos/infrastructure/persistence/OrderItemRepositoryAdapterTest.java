@@ -158,9 +158,9 @@ class OrderItemRepositoryAdapterTest {
         OrderItem pending = pendingItem(o.getId(), true);
         OrderItem clean = pendingItem(o.getId(), false);
 
-        assertThat(items.search(true)).extracting(OrderItem::getId).containsExactly(pending.getId());
-        assertThat(items.search(false)).extracting(OrderItem::getId).containsExactly(clean.getId());
-        assertThat(items.search(null)).extracting(OrderItem::getId).containsExactly(pending.getId(), clean.getId());
+        assertThat(items.search(true, null)).extracting(OrderItem::getId).containsExactly(pending.getId());
+        assertThat(items.search(false, null)).extracting(OrderItem::getId).containsExactly(clean.getId());
+        assertThat(items.search(null, null)).extracting(OrderItem::getId).containsExactly(pending.getId(), clean.getId());
     }
 
     private Order orderWithDeadline(String ext, LocalDateTime deadline, LocalDateTime orderDate) {

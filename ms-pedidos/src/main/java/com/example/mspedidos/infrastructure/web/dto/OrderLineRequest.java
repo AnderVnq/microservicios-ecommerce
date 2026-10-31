@@ -9,12 +9,12 @@ import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 
 public record OrderLineRequest(
-        @NotBlank String sku,
+        @NotBlank String marketSku,
         String externalItemId,
         @Min(1) int quantity,
         @NotNull @DecimalMin("0") BigDecimal unitPrice
 ) {
     public OrderLine toLine() {
-        return new OrderLine(sku, externalItemId, quantity, unitPrice);
+        return new OrderLine(marketSku == null ? null : marketSku.trim(), externalItemId, quantity, unitPrice);
     }
 }

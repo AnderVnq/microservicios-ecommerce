@@ -14,6 +14,8 @@ import com.example.mspedidos.domain.exception.IdempotencyKeyReusedException;
 import com.example.mspedidos.domain.exception.InvalidStatusTransitionException;
 import com.example.mspedidos.domain.exception.InventoryUnavailableException;
 import com.example.mspedidos.domain.exception.ItemSkuChangedException;
+import com.example.mspedidos.domain.exception.ProductLinkPendingException;
+import com.example.mspedidos.domain.exception.ProductsUnavailableException;
 import com.example.mspedidos.domain.exception.PurchaseNotFoundException;
 import com.example.mspedidos.domain.exception.StatusChangeRequestPendingException;
 import com.example.mspedidos.domain.exception.SupplierInactiveException;
@@ -91,7 +93,7 @@ class PurchaseServiceTest extends ServiceTestSupport {
     }
 
     private OrderItem unit(Order order, String sku, OrderItemStatus status) {
-        OrderItem fresh = OrderItem.newUnit(sku, "EXT", BigDecimal.TEN);
+        OrderItem fresh = OrderItem.newUnit(sku, sku, "EXT", BigDecimal.TEN);
         return itemRepository.save(OrderItem.builder().orderId(order.getId()).sku(sku).externalItemId("EXT")
                 .unitPrice(BigDecimal.TEN).status(status)
                 .warehouse(status == OrderItemStatus.PROCESSING ? null : Warehouse.USA)
@@ -156,6 +158,30 @@ class PurchaseServiceTest extends ServiceTestSupport {
         assertThat(view.inventorySync()).isEqualTo(InventorySyncState.OK);
         assertThat(view.purchase().getInventoryEntryId()).isEqualTo(77L);
         assertThat(reload(b).getInventoryUnitId()).isEqualTo(1000 + b.getId());
+    }
+
+    @Test
+    void register_typedSkuDifferentCase_storesCatalogSpelling_andCoversLinkedUnits() {
+        Order o = order(LocalDateTime.of(2026, 4, 5, 0, 0), ORDER_DATE);
+        // unidades enlazadas por /resolve con la escritura del catalogo
+        OrderItem a = unit(o, "ABC-1", OrderItemStatus.PROCESSING);
+        OrderItem b = unit(o, "ABC-1", OrderItemStatus.PROCESSING);
+        when(productsPort.canonical(List.of("abc-1"))).thenReturn(Map.of("abc-1", "ABC-1"));
+
+        // seleccion automatica: el operador teclea " abc-1 "
+        PurchaseView auto = useCase.register("k-1", "h-1", cmd(1, null).withSku(" abc-1 "));
+        assertThat(auto.purchase().getSku()).isEqualTo("ABC-1");
+        assertThat(auto.pendingSurplus()).isZero();
+        assertThat(auto.coveredItems()).hasSize(1);
+
+        // ids explicitos: sin canonicalizar seria 409 ITEM_SKU_CHANGED
+        OrderItem remaining = reload(a).getStatus() == OrderItemStatus.PURCHASED ? b : a;
+        PurchaseView explicit = useCase.register("k-2", "h-2",
+                cmd(1, List.of(remaining.getId())).withSku("abc-1"));
+        assertThat(explicit.purchase().getSku()).isEqualTo("ABC-1");
+        assertThat(ids(explicit.coveredItems())).containsExactly(remaining.getId());
+        assertThat(reload(a).getStatus()).isEqualTo(OrderItemStatus.PURCHASED);
+        assertThat(reload(b).getStatus()).isEqualTo(OrderItemStatus.PURCHASED);
     }
 
     @Test
@@ -392,5 +418,66 @@ class PurchaseServiceTest extends ServiceTestSupport {
         assertThat(reload(a).getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
         assertThat(reload(a).getPurchaseId()).isNull();
         assertThat(historyCount(a.getId(), HistoryEventType.PURCHASE_COVERED)).isZero();
+    }
+
+    private OrderItem pendingUnit(Order order, String marketSku) {
+        OrderItem fresh = OrderItem.newUnit(marketSku, null, "EXT", BigDecimal.TEN);
+        return itemRepository.save(OrderItem.builder().orderId(order.getId()).marketSku(marketSku)
+                .externalItemId("EXT").unitPrice(BigDecimal.TEN).status(OrderItemStatus.PROCESSING)
+                .importerType(fresh.getImporterType()).build());
+    }
+
+    @Test
+    void purchase_explicitPendingUnit_409() {
+        Order o = order(null, ORDER_DATE);
+        OrderItem pending = pendingUnit(o, SKU);
+
+        assertThatThrownBy(() -> useCase.register("k-1", "h-1", cmd(1, List.of(pending.getId()))))
+                .isInstanceOf(ProductLinkPendingException.class);
+
+        assertThat(purchaseCount()).isZero();
+        assertThat(taskCount()).isZero();
+        assertThat(reload(pending).getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
+        assertThat(reload(pending).getPurchaseId()).isNull();
+    }
+
+    @Test
+    void purchase_skuNotInCatalog_422() {
+        Order o = order(null, ORDER_DATE);
+        OrderItem a = unit(o, SKU, OrderItemStatus.PROCESSING);
+        when(productsPort.canonical(any())).thenReturn(Map.of());
+
+        assertThatThrownBy(() -> useCase.register("k-1", "h-1", cmd(1, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("El SKU no existe en el catalogo: " + SKU);
+
+        assertThat(purchaseCount()).isZero();
+        assertThat(reload(a).getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
+    }
+
+    @Test
+    void purchase_productsDown_503() {
+        when(productsPort.canonical(any())).thenThrow(new ProductsUnavailableException("caido"));
+
+        assertThatThrownBy(() -> useCase.register("k-1", "h-1", cmd(1, null)))
+                .isInstanceOf(ProductsUnavailableException.class);
+
+        assertThat(purchaseCount()).isZero();
+        assertThat(taskCount()).isZero();
+    }
+
+    @Test
+    void purchase_selectionNeverPicksPendingUnits() {
+        Order o = order(null, ORDER_DATE);
+        // pendiente cuyo SKU de market coincide con el SKU interno de la compra: igual no se elige
+        OrderItem pending = pendingUnit(o, SKU);
+        OrderItem a = unit(o, SKU, OrderItemStatus.PROCESSING);
+
+        PurchaseView view = useCase.register("k-1", "h-1", cmd(2, null));
+
+        assertThat(ids(view.coveredItems())).containsExactly(a.getId());
+        assertThat(view.pendingSurplus()).isEqualTo(1);
+        assertThat(reload(pending).getStatus()).isEqualTo(OrderItemStatus.PROCESSING);
+        assertThat(reload(pending).getPurchaseId()).isNull();
     }
 }

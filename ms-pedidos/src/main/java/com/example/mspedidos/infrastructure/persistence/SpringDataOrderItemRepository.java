@@ -1,5 +1,7 @@
 package com.example.mspedidos.infrastructure.persistence;
 
+import com.example.mspedidos.application.port.out.MarketSkuKey;
+import com.example.mspedidos.domain.model.OrderItemStatus;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -20,7 +22,34 @@ interface SpringDataOrderItemRepository extends JpaRepository<OrderItemJpaEntity
 
     List<OrderItemJpaEntity> findByOrderIdInOrderByIdAsc(Collection<Long> orderIds);
 
-    List<OrderItemJpaEntity> findByInventoryReleasePendingOrderByIdAsc(boolean inventoryReleasePending);
+    @Query("""
+            select i from OrderItemJpaEntity i
+            where (:releasePending is null or i.inventoryReleasePending = :releasePending)
+              and (:linkPending is null
+                   or (:linkPending = true and i.sku is null)
+                   or (:linkPending = false and i.sku is not null))
+            order by i.id asc
+            """)
+    List<OrderItemJpaEntity> search(@Param("releasePending") Boolean releasePending,
+                                    @Param("linkPending") Boolean linkPending);
+
+    @Query("""
+            select distinct new com.example.mspedidos.application.port.out.MarketSkuKey(o.marketId, i.marketSku)
+            from OrderItemJpaEntity i, OrderJpaEntity o
+            where i.orderId = o.id and i.sku is null and i.marketSku is not null
+              and i.status not in :terminal
+            order by o.marketId, i.marketSku
+            """)
+    List<MarketSkuKey> findPendingMarketSkus(@Param("terminal") Collection<OrderItemStatus> terminal);
+
+    @Query("""
+            select i.id from OrderItemJpaEntity i, OrderJpaEntity o
+            where i.orderId = o.id and o.marketId = :marketId and i.marketSku = :marketSku
+              and i.sku is null and i.status not in :terminal
+            order by i.id asc
+            """)
+    List<Long> findPendingIds(@Param("marketId") Long marketId, @Param("marketSku") String marketSku,
+                              @Param("terminal") Collection<OrderItemStatus> terminal);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select i from OrderItemJpaEntity i where i.id = :id and i.orderId = :orderId")

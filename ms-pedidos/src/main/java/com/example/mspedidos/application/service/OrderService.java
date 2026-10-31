@@ -63,11 +63,12 @@ public class OrderService implements OrderUseCase {
         // ms-clientes se consulta antes de abrir la transaccion: nunca mientras se tiene el lock de cupo
         Person holder = clientesPort.getHolder(cmd.holderId());
         String actor = actorProvider.currentActor();
+        Map<String, String> resolved = unitCreator.resolveSkus(cmd.marketId(), cmd.lines());
         try {
             return tx.execute(status -> {
                 ensureNotDuplicate(cmd);
                 Order order = orderRepository.save(newOrder(cmd));
-                List<OrderItem> items = unitCreator.createUnits(order, holder.document(), cmd.lines(), actor);
+                List<OrderItem> items = unitCreator.createUnits(order, holder.document(), cmd.lines(), resolved, actor);
                 order.recalculateItemsTotal(items);
                 return new OrderView(orderRepository.save(order), items);
             });

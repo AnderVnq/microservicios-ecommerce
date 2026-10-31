@@ -70,7 +70,7 @@ class PurchaseConcurrencyTest extends ServiceTestSupport {
         for (int i = 0; i < 5; i++) {
             units.add(itemRepository.save(OrderItem.builder().orderId(order.getId()).sku(sku).externalItemId("E")
                     .unitPrice(BigDecimal.TEN).status(OrderItemStatus.PROCESSING)
-                    .importerType(OrderItem.newUnit(sku, "E", BigDecimal.TEN).getImporterType()).build()));
+                    .importerType(OrderItem.newUnit(sku, sku, "E", BigDecimal.TEN).getImporterType()).build()));
         }
 
         CountDownLatch startGate = new CountDownLatch(1);

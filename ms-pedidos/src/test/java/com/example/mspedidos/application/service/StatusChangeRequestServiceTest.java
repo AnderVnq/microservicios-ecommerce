@@ -307,7 +307,7 @@ class StatusChangeRequestServiceTest extends ServiceTestSupport {
                 .isInstanceOf(StatusChangeRequestPendingException.class);
         assertThatThrownBy(() -> itemUseCase.changeStatus(orderId, itemId, OrderItemStatus.CANCELLED, null, null))
                 .isInstanceOf(StatusChangeRequestPendingException.class);
-        assertThatThrownBy(() -> itemUseCase.updateDetails(orderId, itemId, "SKU-2", "EXT-2", BigDecimal.ONE))
+        assertThatThrownBy(() -> itemUseCase.updateDetails(orderId, itemId, "SKU-2", null, "EXT-2", BigDecimal.ONE))
                 .isInstanceOf(StatusChangeRequestPendingException.class);
         assertThatThrownBy(() -> itemUseCase.assignImporter(orderId, itemId,
                 new AssignImporterCommand(ImporterType.HOLDER, null)))

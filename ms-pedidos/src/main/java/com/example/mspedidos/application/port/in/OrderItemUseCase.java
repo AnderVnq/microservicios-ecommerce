@@ -20,14 +20,19 @@ public interface OrderItemUseCase {
 
     OrderItem findOne(Long orderId, Long itemId);
 
-    OrderItem updateDetails(Long orderId, Long itemId, String sku, String externalItemId, BigDecimal unitPrice);
+    /**
+     * Edita una unidad {@code PROCESSING}. {@code sku} y {@code marketSku} null conservan el valor actual; un
+     * {@code sku} se valida contra el catalogo y, si la unidad estaba pendiente de vinculo, cierra su incidencia.
+     */
+    OrderItem updateDetails(Long orderId, Long itemId, String sku, String marketSku, String externalItemId,
+                            BigDecimal unitPrice);
 
     /** {@code CANCELLED} cancela la unidad; cualquier otro estado sigue la maquina de estados. */
     OrderItem changeStatus(Long orderId, Long itemId, OrderItemStatus status, Warehouse warehouse,
                            DeliveredTo deliveredTo);
 
-    /** Unidades filtradas por {@code inventoryReleasePending}; {@code null} no filtra. */
-    List<OrderItem> findByReleasePending(Boolean inventoryReleasePending);
+    /** Unidades filtradas por {@code inventoryReleasePending} y {@code productLinkPending}; {@code null} no filtra. */
+    List<OrderItem> search(Boolean inventoryReleasePending, Boolean productLinkPending);
 
     /** Historial cronologico de la unidad. */
     List<OrderItemHistoryEntry> history(Long orderId, Long itemId);

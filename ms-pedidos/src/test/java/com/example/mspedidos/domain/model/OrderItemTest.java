@@ -18,7 +18,7 @@ class OrderItemTest {
     private static final ImporterDocument DOC = new ImporterDocument("DNI", "12345678");
 
     private OrderItem unit() {
-        return OrderItem.newUnit("SKU-1", "EXT-1", new BigDecimal("10.00"));
+        return OrderItem.newUnit("SKU-1", "SKU-1", "EXT-1", new BigDecimal("10.00"));
     }
 
     private OrderItem unitAt(OrderItemStatus status, ImporterType importer) {
@@ -144,11 +144,28 @@ class OrderItemTest {
     @Test
     void updateDetailsOnlyInProcessing() {
         OrderItem item = unit();
-        item.updateDetails("SKU-2", "EXT-2", new BigDecimal("5.00"));
+        item.updateDetails("SKU-2", null, "EXT-2", new BigDecimal("5.00"));
         assertThat(item.getSku()).isEqualTo("SKU-2");
         OrderItem purchased = unitAt(OrderItemStatus.PURCHASED, ImporterType.UNASSIGNED);
-        assertThatThrownBy(() -> purchased.updateDetails("X", "Y", BigDecimal.ONE))
+        assertThatThrownBy(() -> purchased.updateDetails("X", null, "Y", BigDecimal.ONE))
                 .isInstanceOf(ItemNotEditableException.class);
+    }
+
+    @Test
+    void updateDetails_nullSkuAndMarketSku_keepExisting_skuLinksPending() {
+        OrderItem item = unit();
+        item.updateDetails(null, null, "EXT-2", new BigDecimal("5.00"));
+        assertThat(item.getSku()).isEqualTo("SKU-1");
+        assertThat(item.getMarketSku()).isEqualTo("SKU-1");
+        assertThat(item.getExternalItemId()).isEqualTo("EXT-2");
+
+        OrderItem pending = OrderItem.newUnit("FAL-1", null, "EXT-1", BigDecimal.ONE);
+        pending.updateDetails(null, "FAL-2", "EXT-1", BigDecimal.ONE);
+        assertThat(pending.isProductLinkPending()).isTrue();
+        assertThat(pending.getMarketSku()).isEqualTo("FAL-2");
+        pending.updateDetails("ZAP-1", null, "EXT-1", BigDecimal.ONE);
+        assertThat(pending.getSku()).isEqualTo("ZAP-1");
+        assertThat(pending.getMarketSku()).isEqualTo("FAL-2");
     }
 
     @Test

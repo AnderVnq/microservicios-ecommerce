@@ -35,8 +35,11 @@ public class OrderItemJpaEntity {
     @Column(name = "order_id", nullable = false)
     private Long orderId;
 
-    @Column(nullable = false)
+    @Column
     private String sku;
+
+    @Column(name = "market_sku", length = 255)
+    private String marketSku;
 
     @Column(name = "external_item_id")
     private String externalItemId;

@@ -11,4 +11,10 @@ import java.util.List;
 public record RegisterPurchaseCommand(Long supplierId, String sku, String conditionCode, int quantity,
                                       BigDecimal unitCost, String costCurrency, String supplierPurchaseId,
                                       String invoiceNumber, LocalDate expectedArrivalDate, List<Long> orderItemIds) {
+
+    /** Copia con otro sku (p. ej. la escritura canonica del catalogo). */
+    public RegisterPurchaseCommand withSku(String newSku) {
+        return new RegisterPurchaseCommand(supplierId, newSku, conditionCode, quantity, unitCost, costCurrency,
+                supplierPurchaseId, invoiceNumber, expectedArrivalDate, orderItemIds);
+    }
 }

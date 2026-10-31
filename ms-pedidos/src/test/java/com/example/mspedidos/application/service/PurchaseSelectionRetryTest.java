@@ -82,7 +82,7 @@ class PurchaseSelectionRetryTest extends ServiceTestSupport {
         for (int i = 0; i < 5; i++) {
             units.add(itemRepository.save(OrderItem.builder().orderId(order.getId()).sku(SKU).externalItemId("E")
                     .unitPrice(BigDecimal.TEN).status(OrderItemStatus.PROCESSING)
-                    .importerType(OrderItem.newUnit(SKU, "E", BigDecimal.TEN).getImporterType()).build()));
+                    .importerType(OrderItem.newUnit(SKU, SKU, "E", BigDecimal.TEN).getImporterType()).build()));
         }
         return units;
     }

@@ -11,12 +11,14 @@ import com.example.mspedidos.application.port.out.InventorySyncState;
 import com.example.mspedidos.application.port.out.InventorySyncTaskRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderItemRepositoryPort;
 import com.example.mspedidos.application.port.out.PurchaseFilter;
+import com.example.mspedidos.application.port.out.ProductsPort;
 import com.example.mspedidos.application.port.out.PurchaseRepositoryPort;
 import com.example.mspedidos.application.port.out.StatusChangeRequestRepositoryPort;
 import com.example.mspedidos.application.port.out.SupplierRepositoryPort;
 import com.example.mspedidos.domain.exception.IdempotencyKeyReusedException;
 import com.example.mspedidos.domain.exception.ItemSkuChangedException;
 import com.example.mspedidos.domain.exception.OrderItemNotFoundException;
+import com.example.mspedidos.domain.exception.ProductLinkPendingException;
 import com.example.mspedidos.domain.exception.PurchaseNotFoundException;
 import com.example.mspedidos.domain.exception.StatusChangeRequestPendingException;
 import com.example.mspedidos.domain.exception.SupplierNotFoundException;
@@ -69,6 +71,7 @@ public class PurchaseService implements PurchaseUseCase {
     private final StatusChangeRequestRepositoryPort requestRepository;
     private final InventorySyncTaskRepositoryPort taskRepository;
     private final InventoryPort inventoryPort;
+    private final ProductsPort productsPort;
     private final InventorySyncExecutor syncExecutor;
     private final UnitUrgencySelector selector;
     private final ItemHistoryRecorder history;
@@ -81,7 +84,8 @@ public class PurchaseService implements PurchaseUseCase {
     PurchaseService(PurchaseRepositoryPort purchaseRepository, SupplierRepositoryPort supplierRepository,
                     OrderItemRepositoryPort itemRepository, StatusChangeRequestRepositoryPort requestRepository,
                     InventorySyncTaskRepositoryPort taskRepository, InventoryPort inventoryPort,
-                    InventorySyncExecutor syncExecutor, UnitUrgencySelector selector, ItemHistoryRecorder history,
+                    ProductsPort productsPort, InventorySyncExecutor syncExecutor, UnitUrgencySelector selector,
+                    ItemHistoryRecorder history,
                     ActorProvider actorProvider, ObjectMapper json, PurchaseArrivalService arrivals,
                     PurchaseNonReceiptService nonReceipts, PlatformTransactionManager transactionManager) {
         this.purchaseRepository = purchaseRepository;
@@ -90,6 +94,7 @@ public class PurchaseService implements PurchaseUseCase {
         this.requestRepository = requestRepository;
         this.taskRepository = taskRepository;
         this.inventoryPort = inventoryPort;
+        this.productsPort = productsPort;
         this.syncExecutor = syncExecutor;
         this.selector = selector;
         this.history = history;
@@ -103,7 +108,7 @@ public class PurchaseService implements PurchaseUseCase {
     }
 
     @Override
-    public PurchaseView register(String idempotencyKey, String requestHash, RegisterPurchaseCommand cmd) {
+    public PurchaseView register(String idempotencyKey, String requestHash, RegisterPurchaseCommand request) {
         if (idempotencyKey == null || idempotencyKey.isBlank() || idempotencyKey.length() > MAX_KEY_LENGTH) {
             throw new IllegalArgumentException(
                     "La cabecera Idempotency-Key es obligatoria (maximo " + MAX_KEY_LENGTH + " caracteres)");
@@ -115,11 +120,20 @@ public class PurchaseService implements PurchaseUseCase {
         if (replay.isPresent()) {
             return replay.get();
         }
-        String currency = validate(cmd);
+        String currency = validate(request);
         // lectura remota antes de abrir la transaccion (caido -> InventoryUnavailableException, 503)
-        if (!inventoryPort.isConditionActive(cmd.conditionCode())) {
-            throw new IllegalArgumentException("La condicion no existe o esta inactiva: " + cmd.conditionCode());
+        if (!inventoryPort.isConditionActive(request.conditionCode())) {
+            throw new IllegalArgumentException("La condicion no existe o esta inactiva: " + request.conditionCode());
         }
+        // el sku de la compra es interno: debe existir en el catalogo (caido -> ProductsUnavailableException, 503).
+        // Se guarda con la escritura del catalogo: las unidades enlazadas por /resolve la usan y la comparacion
+        // de unidades (y la de inventario) distingue mayusculas.
+        String typedSku = request.sku().trim();
+        String canonicalSku = productsPort.canonical(List.of(typedSku)).get(typedSku);
+        if (canonicalSku == null) {
+            throw new IllegalArgumentException("El SKU no existe en el catalogo: " + typedSku);
+        }
+        RegisterPurchaseCommand cmd = request.withSku(canonicalSku);
         String actor = actorProvider.currentActor();
         Long purchaseId = null;
         for (int attempt = 1; purchaseId == null; attempt++) {
@@ -237,6 +251,10 @@ public class PurchaseService implements PurchaseUseCase {
             OrderItem item = locked.get(id);
             if (item == null) {
                 throw new OrderItemNotFoundException(id);
+            }
+            if (item.isProductLinkPending()) {
+                throw new ProductLinkPendingException("La unidad " + id + " aun no tiene SKU interno (SKU de market "
+                        + item.getMarketSku() + " sin equivalencia en el catalogo); no puede cubrirse con una compra");
             }
             if (!sku.equals(item.getSku())) {
                 throw new ItemSkuChangedException("La unidad " + id + " es del sku " + item.getSku()

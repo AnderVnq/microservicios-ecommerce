@@ -12,6 +12,8 @@ import com.example.mspedidos.domain.exception.InventoryReleasePendingException;
 import com.example.mspedidos.domain.exception.InventoryUnavailableException;
 import com.example.mspedidos.domain.exception.InventoryUnitNotFoundException;
 import com.example.mspedidos.domain.exception.ItemSkuChangedException;
+import com.example.mspedidos.domain.exception.ProductLinkPendingException;
+import com.example.mspedidos.application.port.in.OrderLine;
 import com.example.mspedidos.domain.model.HistoryEventType;
 import com.example.mspedidos.domain.model.ImporterType;
 import com.example.mspedidos.domain.model.IncidentStatus;
@@ -29,10 +31,12 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -328,7 +332,7 @@ class InventoryAllocationServiceTest extends ServiceTestSupport {
         OrderItem unit = view.items().get(0);
         // el SKU cambia mientras inventario asigna una unidad del SKU anterior
         when(inventoryPort.allocate(anyLong(), anyLong(), anyString())).thenAnswer(inv -> {
-            itemUseCase.updateDetails(orderId, unit.getId(), "SKU-2", "EXT-2", new BigDecimal("10.00"));
+            itemUseCase.updateDetails(orderId, unit.getId(), "SKU-2", null, "EXT-2", new BigDecimal("10.00"));
             return new AllocatedUnit(UNIT, Warehouse.USA, "NEW", BigDecimal.TEN);
         });
 
@@ -517,5 +521,38 @@ class InventoryAllocationServiceTest extends ServiceTestSupport {
 
         verifyNoInteractions(inventoryPort);
         assertThat(reload(unit).isInventoryReleasePending()).isFalse();
+    }
+
+    @Test
+    void allocate_pendingUnit_409_noRemoteCall() {
+        stubHolder(1L, dni("111"));
+        when(productsPort.resolve(any(), any())).thenReturn(Map.of());
+        OrderView view = orderUseCase.create(command(1L, uniqueExternalId(), ORDER_DATE,
+                new OrderLine("FAL-1", "EXT-1", 1, new BigDecimal("10.00"))));
+        OrderItem unit = view.items().get(0);
+
+        Throwable thrown = catchThrowable(() -> allocation.allocate(view.order().getId(), unit.getId(), UNIT));
+
+        assertThat(thrown).isInstanceOf(ProductLinkPendingException.class);
+        verifyNoInteractions(inventoryPort);
+        assertUntouched(unit);
+    }
+
+    @Test
+    void allocate_unitPendingUnderLock_409_compensates() {
+        OrderView view = orderWithFourUnits();
+        Long orderId = view.order().getId();
+        OrderItem unit = view.items().get(0);
+        // red de seguridad: si bajo lock la unidad aparece sin sku, se rechaza y se compensa
+        when(inventoryPort.allocate(anyLong(), anyLong(), anyString())).thenAnswer(inv -> {
+            jdbc.update("update order_items set sku = null where id = ?", unit.getId());
+            return new AllocatedUnit(UNIT, Warehouse.USA, "NEW", BigDecimal.TEN);
+        });
+
+        Throwable thrown = catchThrowable(() -> allocation.allocate(orderId, unit.getId(), UNIT));
+
+        assertThat(thrown).isInstanceOf(ProductLinkPendingException.class);
+        verify(inventoryPort, times(1)).release(UNIT, unit.getId());
+        assertThat(reload(unit).getInventoryUnitId()).isNull();
     }
 }

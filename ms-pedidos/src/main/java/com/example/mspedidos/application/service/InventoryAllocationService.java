@@ -12,6 +12,7 @@ import com.example.mspedidos.domain.exception.InventoryReleasePendingException;
 import com.example.mspedidos.domain.exception.ItemSkuChangedException;
 import com.example.mspedidos.domain.exception.OrderItemNotFoundException;
 import com.example.mspedidos.domain.exception.OrderNotFoundException;
+import com.example.mspedidos.domain.exception.ProductLinkPendingException;
 import com.example.mspedidos.domain.model.HistoryEventType;
 import com.example.mspedidos.domain.model.ImporterType;
 import com.example.mspedidos.domain.model.IncidentType;
@@ -65,6 +66,7 @@ public class InventoryAllocationService implements InventoryAllocationUseCase {
         if (inventoryUnitId.equals(current.getInventoryUnitId())) {
             return current; // reintento de una asignacion ya confirmada
         }
+        // incluye unidad pendiente de vinculo (sin sku) -> 409 antes de llamar a ms-inventory
         ensureAllocatable(current);
         String actor = actorProvider.currentActor();
 
@@ -96,7 +98,7 @@ public class InventoryAllocationService implements InventoryAllocationUseCase {
         if (inventoryUnitId.equals(item.getInventoryUnitId())) {
             return item; // un reintento concurrente ya confirmo esta misma asignacion
         }
-        // re-chequeo con lock: la unidad pudo cambiar mientras ms-inventory asignaba
+        // re-chequeo con lock: la unidad pudo cambiar mientras ms-inventory asignaba (sin sku -> 409 antes de comparar)
         ensureAllocatable(item);
         if (!allocatedSku.equals(item.getSku())) {
             throw new ItemSkuChangedException("El SKU de la unidad " + itemId + " cambio de " + allocatedSku
@@ -131,6 +133,11 @@ public class InventoryAllocationService implements InventoryAllocationUseCase {
         if (item.getStatus() != OrderItemStatus.PROCESSING || item.getInventoryUnitId() != null) {
             throw new InvalidStatusTransitionException("Solo una unidad en PROCESSING sin cobertura previa puede "
                     + "cubrirse desde inventario, actual: " + item.getStatus());
+        }
+        if (item.isProductLinkPending()) {
+            throw new ProductLinkPendingException("La unidad " + item.getId() + " aun no tiene SKU interno (SKU de "
+                    + "market " + item.getMarketSku() + " sin equivalencia en el catalogo); no puede cubrirse desde "
+                    + "inventario");
         }
     }
 

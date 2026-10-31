@@ -13,6 +13,7 @@ public record OrderItemResponse(
         Long id,
         Long orderId,
         String sku,
+        String marketSku,
         String externalItemId,
         BigDecimal unitPrice,
         OrderItemStatus status,
@@ -30,7 +31,7 @@ public record OrderItemResponse(
 ) {
     public static OrderItemResponse from(OrderItem i) {
         var doc = i.getImporterDocument();
-        return new OrderItemResponse(i.getId(), i.getOrderId(), i.getSku(), i.getExternalItemId(),
+        return new OrderItemResponse(i.getId(), i.getOrderId(), i.getSku(), i.getMarketSku(), i.getExternalItemId(),
                 i.getUnitPrice(), i.getStatus(), i.getWarehouse(), i.getDeliveredTo(), i.getImporterType(),
                 i.getInventoryUnitId(), i.getPurchaseId(), i.isInventoryReleasePending(), i.getFamilyMemberId(), doc == null ? null : doc.type(), doc == null ? null : doc.number(),
                 i.getCreatedAt(), i.getUpdatedAt());

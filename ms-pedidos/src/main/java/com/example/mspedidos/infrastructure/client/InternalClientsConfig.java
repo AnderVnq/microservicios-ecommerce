@@ -28,6 +28,11 @@ class InternalClientsConfig {
     }
 
     @Bean
+    RestClient productsRestClient(@Value("${products.base-url}") String baseUrl, ServiceTokenProvider tokens) {
+        return serviceClient(baseUrl, tokens);
+    }
+
+    @Bean
     RestClient authRestClient(@Value("${auth.base-url}") String baseUrl, ServiceTokenProvider tokens) {
         return serviceClient(baseUrl, tokens);
     }

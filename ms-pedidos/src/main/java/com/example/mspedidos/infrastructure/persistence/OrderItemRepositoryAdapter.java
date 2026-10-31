@@ -1,14 +1,16 @@
 package com.example.mspedidos.infrastructure.persistence;
 
+import com.example.mspedidos.application.port.out.MarketSkuKey;
 import com.example.mspedidos.application.port.out.OrderItemRepositoryPort;
 import com.example.mspedidos.domain.model.ImporterDocument;
 import com.example.mspedidos.domain.model.OrderItem;
+import com.example.mspedidos.domain.model.OrderItemStatus;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -16,6 +18,10 @@ import java.util.Optional;
 @Component
 @RequiredArgsConstructor
 class OrderItemRepositoryAdapter implements OrderItemRepositoryPort {
+
+    /** Estados terminales segun {@link OrderItemStatus#isTerminal()}: una unidad ahi ya no se enlaza. */
+    private static final List<OrderItemStatus> TERMINAL = Arrays.stream(OrderItemStatus.values())
+            .filter(OrderItemStatus::isTerminal).toList();
 
     private final SpringDataOrderItemRepository jpaRepository;
 
@@ -72,15 +78,22 @@ class OrderItemRepositoryAdapter implements OrderItemRepositoryPort {
 
     @Override
     public List<OrderItem> findReleasePending() {
-        return search(true);
+        return search(true, null);
     }
 
     @Override
-    public List<OrderItem> search(Boolean inventoryReleasePending) {
-        List<OrderItemJpaEntity> found = inventoryReleasePending == null
-                ? jpaRepository.findAll(Sort.by("id"))
-                : jpaRepository.findByInventoryReleasePendingOrderByIdAsc(inventoryReleasePending);
-        return found.stream().map(this::toDomain).toList();
+    public List<OrderItem> search(Boolean inventoryReleasePending, Boolean productLinkPending) {
+        return jpaRepository.search(inventoryReleasePending, productLinkPending).stream().map(this::toDomain).toList();
+    }
+
+    @Override
+    public List<MarketSkuKey> findPendingMarketSkus() {
+        return jpaRepository.findPendingMarketSkus(TERMINAL);
+    }
+
+    @Override
+    public List<Long> findPendingIds(Long marketId, String marketSku) {
+        return jpaRepository.findPendingIds(marketId, marketSku, TERMINAL);
     }
 
     @Override
@@ -124,6 +137,7 @@ class OrderItemRepositoryAdapter implements OrderItemRepositoryPort {
                 .id(e.getId())
                 .orderId(e.getOrderId())
                 .sku(e.getSku())
+                .marketSku(e.getMarketSku())
                 .externalItemId(e.getExternalItemId())
                 .unitPrice(e.getUnitPrice())
                 .status(e.getStatus())
@@ -147,6 +161,7 @@ class OrderItemRepositoryAdapter implements OrderItemRepositoryPort {
                 .id(i.getId())
                 .orderId(i.getOrderId())
                 .sku(i.getSku())
+                .marketSku(i.getMarketSku())
                 .externalItemId(i.getExternalItemId())
                 .unitPrice(i.getUnitPrice())
                 .status(i.getStatus())

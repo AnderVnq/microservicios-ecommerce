@@ -31,6 +31,11 @@ public class ItemIncident {
         return open(orderItemId, IncidentType.IMPORTER_ASSIGNMENT_PENDING, IncidentScope.EXTERNAL, description, actor);
     }
 
+    public static ItemIncident productLinkPending(Long orderItemId, String marketSku, String actor) {
+        return open(orderItemId, IncidentType.PRODUCT_LINK_PENDING, IncidentScope.INTERNAL,
+                "SKU del market sin equivalencia en el catalogo: " + marketSku, actor);
+    }
+
     public static ItemIncident open(Long orderItemId, IncidentType type, IncidentScope scope,
                                     String description, String actor) {
         return ItemIncident.builder()

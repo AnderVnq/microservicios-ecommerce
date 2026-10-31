@@ -5,6 +5,7 @@ import com.example.mspedidos.application.port.in.ImporterQuotaUseCase;
 import com.example.mspedidos.application.port.in.InventoryAllocationUseCase;
 import com.example.mspedidos.application.port.in.OrderItemUseCase;
 import com.example.mspedidos.application.port.in.OrderView;
+import com.example.mspedidos.application.port.in.ProductLinkUseCase;
 import com.example.mspedidos.application.port.in.OrderUseCase;
 import com.example.mspedidos.application.port.in.StatusChangeRequestUseCase;
 import com.example.mspedidos.domain.exception.AuthUnavailableException;
@@ -60,6 +61,7 @@ class OrderItemControllerTest {
     @MockitoBean StatusChangeRequestUseCase undo;
     @MockitoBean OrderUseCase orders;
     @MockitoBean ImporterQuotaUseCase quota;
+    @MockitoBean ProductLinkUseCase productLinks;
     @MockitoBean JwtDecoder jwtDecoder;
 
     private static OrderItem unit(long id) {
@@ -71,7 +73,7 @@ class OrderItemControllerTest {
     void addUnits_201() throws Exception {
         when(items.addUnits(eq(7L), any())).thenReturn(List.of(unit(1), unit(2)));
         mvc.perform(post("/api/v1/orders/7/items").with(jwt()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sku\":\"SKU-1\",\"quantity\":2,\"unitPrice\":10.5}"))
+                        .content("{\"marketSku\":\"SKU-1\",\"quantity\":2,\"unitPrice\":10.5}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.length()").value(2));
     }
@@ -79,7 +81,7 @@ class OrderItemControllerTest {
     @Test
     void addUnits_blankSku_422() throws Exception {
         mvc.perform(post("/api/v1/orders/7/items").with(jwt()).contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"sku\":\" \",\"quantity\":2,\"unitPrice\":10.5}"))
+                        .content("{\"marketSku\":\" \",\"quantity\":2,\"unitPrice\":10.5}"))
                 .andExpect(status().isUnprocessableContent());
         verifyNoInteractions(items);
     }
@@ -102,7 +104,7 @@ class OrderItemControllerTest {
 
     @Test
     void updateItem_200() throws Exception {
-        when(items.updateDetails(eq(7L), eq(1L), any(), any(), any())).thenReturn(unit(1));
+        when(items.updateDetails(eq(7L), eq(1L), any(), any(), any(), any())).thenReturn(unit(1));
         mvc.perform(put("/api/v1/orders/7/items/1").with(jwt()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"sku\":\"SKU-9\",\"unitPrice\":3}"))
                 .andExpect(status().isOk());
@@ -265,7 +267,7 @@ class OrderItemControllerTest {
         OrderItem flagged = OrderItem.builder().id(4L).orderId(7L).sku("SKU-1").unitPrice(BigDecimal.ONE)
                 .status(OrderItemStatus.PROCESSING).importerType(ImporterType.UNASSIGNED)
                 .inventoryReleasePending(true).build();
-        when(items.findByReleasePending(true)).thenReturn(List.of(flagged));
+        when(items.search(true, null)).thenReturn(List.of(flagged));
 
         mvc.perform(get("/api/v1/orders/items").param("inventoryReleasePending", "true").with(jwt()))
                 .andExpect(status().isOk())
@@ -277,7 +279,7 @@ class OrderItemControllerTest {
 
     @Test
     void literalItemsPath_winsOverOrderId_andOrderByIdStillWorks() throws Exception {
-        when(items.findByReleasePending(null)).thenReturn(List.of());
+        when(items.search(null, null)).thenReturn(List.of());
         when(orders.findById(5L)).thenReturn(new OrderView(
                 Order.builder().id(5L).externalOrderId("EXT-5").holderId(1L).marketId(2L)
                         .orderDate(java.time.LocalDateTime.of(2026, 3, 1, 10, 0)).itemsTotal(BigDecimal.ZERO).build(),
@@ -292,5 +294,40 @@ class OrderItemControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(5));
         verify(orders).findById(5L);
+    }
+
+    @Test
+    void itemsProductLinkPending_filtersAndCombines() throws Exception {
+        OrderItem pending = OrderItem.builder().id(5L).orderId(7L).marketSku("FAL-1").unitPrice(BigDecimal.ONE)
+                .status(OrderItemStatus.PROCESSING).importerType(ImporterType.UNASSIGNED).build();
+        when(items.search(false, true)).thenReturn(List.of(pending));
+
+        mvc.perform(get("/api/v1/orders/items").param("productLinkPending", "true")
+                        .param("inventoryReleasePending", "false").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].id").value(5))
+                .andExpect(jsonPath("$[0].marketSku").value("FAL-1"));
+        verify(items).search(false, true);
+    }
+
+    @Test
+    void linkSkus_200_returnsLinkedCount() throws Exception {
+        when(productLinks.linkPending()).thenReturn(3);
+
+        mvc.perform(post("/api/v1/orders/items/link-skus").with(jwt()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.linked").value(3));
+        verify(productLinks).linkPending();
+        verifyNoInteractions(orders);
+    }
+
+    @Test
+    void updateItem_withoutSku_200_passesNulls() throws Exception {
+        when(items.updateDetails(eq(7L), eq(1L), any(), any(), any(), any())).thenReturn(unit(1));
+        mvc.perform(put("/api/v1/orders/7/items/1").with(jwt()).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"marketSku\":\"FAL-2\",\"unitPrice\":3}"))
+                .andExpect(status().isOk());
+        verify(items).updateDetails(eq(7L), eq(1L), eq(null), eq("FAL-2"), eq(null), any());
     }
 }

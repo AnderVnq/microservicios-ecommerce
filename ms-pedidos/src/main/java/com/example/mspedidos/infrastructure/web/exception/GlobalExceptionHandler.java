@@ -6,6 +6,7 @@ import com.example.mspedidos.domain.exception.BusinessRuleException;
 import com.example.mspedidos.domain.exception.InventoryUnavailableException;
 import com.example.mspedidos.domain.exception.ClientesUnavailableException;
 import com.example.mspedidos.domain.exception.NotFoundException;
+import com.example.mspedidos.domain.exception.ProductsUnavailableException;
 import com.example.mspedidos.domain.exception.PersonNotFoundException;
 import lombok.extern.slf4j.Slf4j;
 import com.example.mspedidos.domain.exception.IdempotencyKeyReusedException;
@@ -80,6 +81,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ApiError> handleInventoryUnavailable(InventoryUnavailableException ex) {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                 .body(ApiError.of("INVENTORY_UNAVAILABLE", ex.getMessage()));
+    }
+
+    @ExceptionHandler(ProductsUnavailableException.class)
+    public ResponseEntity<ApiError> handleProductsUnavailable(ProductsUnavailableException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(ApiError.of("PRODUCTS_UNAVAILABLE", ex.getMessage()));
     }
 
     @ExceptionHandler(AuthUnavailableException.class)

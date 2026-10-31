@@ -54,7 +54,7 @@ class OrderControllerTest {
 
     static final String BODY = """
             {"holderId":1,"marketId":2,"externalOrderId":"EXT-1","orderDate":"2026-03-01T10:00:00",
-             "lines":[{"sku":"SKU-1","quantity":2,"unitPrice":10.50}]}""";
+             "lines":[{"marketSku":"SKU-1","quantity":2,"unitPrice":10.50}]}""";
 
     private static Order order() {
         return Order.builder().id(7L).externalOrderId("EXT-1").holderId(1L).marketId(2L)

@@ -91,7 +91,7 @@ abstract class PurchaseFlowTestSupport extends ServiceTestSupport {
     }
 
     OrderItem processing(Order order) {
-        OrderItem fresh = OrderItem.newUnit(SKU, "EXT", BigDecimal.TEN);
+        OrderItem fresh = OrderItem.newUnit(SKU, SKU, "EXT", BigDecimal.TEN);
         return itemRepository.save(OrderItem.builder().orderId(order.getId()).sku(SKU).externalItemId("EXT")
                 .unitPrice(BigDecimal.TEN).status(OrderItemStatus.PROCESSING)
                 .importerType(fresh.getImporterType()).build());

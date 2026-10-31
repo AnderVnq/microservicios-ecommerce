@@ -22,6 +22,7 @@ public class OrderItem {
     private Long id;
     private Long orderId;
     private String sku;
+    private String marketSku;
     private String externalItemId;
     private BigDecimal unitPrice;
     private OrderItemStatus status;
@@ -37,14 +38,29 @@ public class OrderItem {
     private Instant createdAt;
     private Instant updatedAt;
 
-    public static OrderItem newUnit(String sku, String externalItemId, BigDecimal unitPrice) {
+    public static OrderItem newUnit(String marketSku, String sku, String externalItemId, BigDecimal unitPrice) {
         return OrderItem.builder()
+                .marketSku(marketSku)
                 .sku(sku)
                 .externalItemId(externalItemId)
                 .unitPrice(unitPrice)
                 .status(OrderItemStatus.PROCESSING)
                 .importerType(ImporterType.UNASSIGNED)
                 .build();
+    }
+
+    /** Sin SKU interno: el SKU del market aun no tiene equivalencia en el catalogo. */
+    public boolean isProductLinkPending() {
+        return sku == null;
+    }
+
+    /** Asigna el SKU interno a una unidad pendiente; devuelve false (sin cambios) si ya lo tenia. */
+    public boolean linkSku(String sku) {
+        if (!isProductLinkPending() || sku == null) {
+            return false;
+        }
+        this.sku = sku;
+        return true;
     }
 
     /** Vincula una unidad nueva a su orden; una unidad no cambia de orden. */
@@ -250,11 +266,20 @@ public class OrderItem {
         this.pendingReleaseUnitId = null;
     }
 
-    public void updateDetails(String sku, String externalItemId, BigDecimal unitPrice) {
+    /**
+     * Edita la unidad (solo en PROCESSING). {@code sku} y {@code marketSku} null conservan el valor actual: un
+     * {@code sku} que ya tenia valor nunca vuelve a null.
+     */
+    public void updateDetails(String sku, String marketSku, String externalItemId, BigDecimal unitPrice) {
         if (status != OrderItemStatus.PROCESSING) {
             throw new ItemNotEditableException("La unidad solo es editable en estado PROCESSING, actual: " + status);
         }
-        this.sku = sku;
+        if (sku != null) {
+            this.sku = sku;
+        }
+        if (marketSku != null) {
+            this.marketSku = marketSku;
+        }
         this.externalItemId = externalItemId;
         this.unitPrice = unitPrice;
     }

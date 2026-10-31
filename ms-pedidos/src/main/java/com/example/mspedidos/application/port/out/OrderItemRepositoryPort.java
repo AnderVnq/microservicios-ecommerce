@@ -38,8 +38,20 @@ public interface OrderItemRepositoryPort {
     /** Unidades con {@code inventory_release_pending = true}, por id ascendente. */
     List<OrderItem> findReleasePending();
 
-    /** Unidades filtradas por {@code inventory_release_pending}; {@code null} no filtra. Por id ascendente. */
-    List<OrderItem> search(Boolean inventoryReleasePending);
+    /**
+     * Unidades filtradas por {@code inventory_release_pending} y por pendiente de vinculo ({@code sku} null);
+     * {@code null} no filtra. Por id ascendente.
+     */
+    List<OrderItem> search(Boolean inventoryReleasePending, Boolean productLinkPending);
+
+    /** Pares (market, SKU de market) distintos de las unidades no terminales sin SKU interno. Sin lock. */
+    List<MarketSkuKey> findPendingMarketSkus();
+
+    /**
+     * Ids de las unidades no terminales sin SKU interno de ese market con ese SKU de market (comparado tal como se
+     * guarda), por id ascendente. Sin lock.
+     */
+    List<Long> findPendingIds(Long marketId, String marketSku);
 
     /**
      * Ids de unidades {@code PROCESSING} del sku sin compra ni unidad fisica, sin marca de liberacion y sin

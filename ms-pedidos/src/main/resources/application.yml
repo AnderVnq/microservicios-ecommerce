@@ -34,12 +34,17 @@ orders:
     delay-ms: 60000
   inventory-sync-job:
     delay-ms: 60000
+  product-link-job:
+    delay-ms: 60000
 
 clientes:
   base-url: ${CLIENTES_SERVICE_URI:http://localhost:8082}
 
 inventory:
   base-url: ${INVENTORY_SERVICE_URI:http://localhost:8085}
+
+products:
+  base-url: ${PRODUCTS_SERVICE_URI:http://localhost:8086}
 
 auth:
   base-url: ${AUTH_SERVICE_URI:http://localhost:8084}

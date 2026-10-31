@@ -10,6 +10,7 @@ import com.example.mspedidos.application.port.out.ItemIncidentRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderItemHistoryRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderItemRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderRepositoryPort;
+import com.example.mspedidos.application.port.out.ProductsPort;
 import com.example.mspedidos.application.port.out.QuotaLockPort;
 import com.example.mspedidos.domain.exception.ImporterChangeNotAllowedException;
 import com.example.mspedidos.domain.exception.OrderItemNotFoundException;
@@ -34,6 +35,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Orden de locks (unico y aciclico, igual en todos los caminos, incluido {@link OrderService}):
@@ -57,6 +59,7 @@ public class OrderItemService implements OrderItemUseCase {
     private final InventoryReleaser releaser;
     private final OrderItemHistoryRepositoryPort historyRepository;
     private final StatusChangeRequestRepositoryPort undoRepository;
+    private final ProductsPort productsPort;
     private final TransactionTemplate tx;
 
     OrderItemService(OrderRepositoryPort orderRepository, OrderItemRepositoryPort itemRepository,
@@ -65,7 +68,7 @@ public class OrderItemService implements OrderItemUseCase {
                      UnitCreator unitCreator, ItemHistoryRecorder history,
                      ItemCanceller canceller, InventoryReleaser releaser,
                      OrderItemHistoryRepositoryPort historyRepository,
-                     StatusChangeRequestRepositoryPort undoRepository,
+                     StatusChangeRequestRepositoryPort undoRepository, ProductsPort productsPort,
                      PlatformTransactionManager transactionManager) {
         this.orderRepository = orderRepository;
         this.itemRepository = itemRepository;
@@ -80,6 +83,7 @@ public class OrderItemService implements OrderItemUseCase {
         this.releaser = releaser;
         this.historyRepository = historyRepository;
         this.undoRepository = undoRepository;
+        this.productsPort = productsPort;
         this.tx = new TransactionTemplate(transactionManager);
         // READ COMMITTED explicito: con REPEATABLE READ (default de InnoDB) el snapshot se fija en la primera
         // lectura, antes de esperar el lock de cupo, y el conteo posterior no veria las unidades del ganador.
@@ -88,11 +92,13 @@ public class OrderItemService implements OrderItemUseCase {
 
     @Override
     public List<OrderItem> addUnits(Long orderId, OrderLine line) {
-        Person holder = clientesPort.getHolder(findOrder(orderId).getHolderId());
+        Order order0 = findOrder(orderId);
+        Person holder = clientesPort.getHolder(order0.getHolderId());
         String actor = actorProvider.currentActor();
+        Map<String, String> resolved = unitCreator.resolveSkus(order0.getMarketId(), List.of(line));
         return tx.execute(status -> {
             Order order = lockOrder(orderId);
-            List<OrderItem> added = unitCreator.createUnits(order, holder.document(), List.of(line), actor);
+            List<OrderItem> added = unitCreator.createUnits(order, holder.document(), List.of(line), resolved, actor);
             order.recalculateItemsTotal(itemRepository.findByOrderId(orderId));
             orderRepository.save(order);
             return added;
@@ -145,8 +151,8 @@ public class OrderItemService implements OrderItemUseCase {
     }
 
     @Override
-    public List<OrderItem> findByReleasePending(Boolean inventoryReleasePending) {
-        return itemRepository.search(inventoryReleasePending);
+    public List<OrderItem> search(Boolean inventoryReleasePending, Boolean productLinkPending) {
+        return itemRepository.search(inventoryReleasePending, productLinkPending);
     }
 
     @Override
@@ -161,17 +167,35 @@ public class OrderItemService implements OrderItemUseCase {
     }
 
     @Override
-    public OrderItem updateDetails(Long orderId, Long itemId, String sku, String externalItemId,
-                                   BigDecimal unitPrice) {
+    public OrderItem updateDetails(Long orderId, Long itemId, String rawSku, String marketSku,
+                                   String externalItemId, BigDecimal unitPrice) {
+        if (rawSku != null && rawSku.isBlank()) {
+            throw new IllegalArgumentException("El sku no puede estar en blanco");
+        }
+        if (marketSku != null && marketSku.isBlank()) {
+            throw new IllegalArgumentException("El marketSku no puede estar en blanco");
+        }
+        String sku = rawSku == null ? null : canonicalSku(orderId, itemId, rawSku.trim());
         String actor = actorProvider.currentActor();
         return tx.execute(status -> {
             Order order = lockOrder(orderId);
             OrderItem item = lockItem(orderId, itemId);
             ensureNoPendingUndo(itemId);
             String before = describe(item);
-            item.updateDetails(sku, externalItemId, unitPrice);
+            boolean wasPending = item.isProductLinkPending();
+            item.updateDetails(sku, marketSku, externalItemId, unitPrice);
             OrderItem saved = itemRepository.save(item);
             history.record(itemId, HistoryEventType.UPDATED, before, describe(saved), actor);
+            if (wasPending && !saved.isProductLinkPending()) {
+                // enlace manual: la incidencia la gestiona el sistema, se cierra aqui (no por la API de incidencias)
+                history.record(itemId, HistoryEventType.SKU_LINKED, null, saved.getSku(), actor);
+                incidentRepository.findOpen(itemId, IncidentType.PRODUCT_LINK_PENDING).ifPresent(incident -> {
+                    incident.resolve(actor);
+                    incidentRepository.save(incident);
+                    history.record(itemId, HistoryEventType.INCIDENT_RESOLVED,
+                            IncidentType.PRODUCT_LINK_PENDING.name(), null, actor);
+                });
+            }
             order.recalculateItemsTotal(itemRepository.findByOrderId(orderId));
             orderRepository.save(order);
             return saved;
@@ -209,9 +233,18 @@ public class OrderItemService implements OrderItemUseCase {
         return historyRepository.findByOrderItemId(itemId);
     }
 
-    /** Resumen corto de los campos editables: {@code sku/externalItemId/unitPrice}. */
+    /**
+     * Resumen corto de los campos editables: {@code sku/marketSku/externalItemId/unitPrice}; una unidad pendiente
+     * de vinculo muestra {@code (por enlazar)} en lugar del sku; los demas valores ausentes, {@code -}.
+     */
     private static String describe(OrderItem item) {
-        return item.getSku() + "/" + item.getExternalItemId() + "/" + item.getUnitPrice();
+        String sku = item.isProductLinkPending() ? "(por enlazar)" : item.getSku();
+        return sku + "/" + orDash(item.getMarketSku()) + "/" + orDash(item.getExternalItemId()) + "/"
+                + item.getUnitPrice();
+    }
+
+    private static String orDash(String value) {
+        return value == null ? "-" : value;
     }
 
     /** Con una solicitud de cambio de estado pendiente la unidad queda congelada (spec 10.2c-2); llamar con su lock tomado. */
@@ -220,6 +253,24 @@ public class OrderItemService implements OrderItemUseCase {
             throw new StatusChangeRequestPendingException("La unidad " + itemId
                     + " tiene una solicitud de cambio de estado pendiente: " + pending.getId());
         });
+    }
+
+    /**
+     * SKU interno tecleado -> escritura guardada en el catalogo. Si es el mismo SKU que ya tiene la unidad (sin
+     * distinguir mayusculas) no se consulta ms-products: una edicion de precio no debe fallar con 503 si el catalogo
+     * esta caido. El SKU actual ya es canonico (vino de /resolve o de esta misma validacion). Llamada remota: va
+     * antes de abrir la transaccion (caido -> ProductsUnavailableException, 503).
+     */
+    private String canonicalSku(Long orderId, Long itemId, String sku) {
+        String current = findItem(orderId, itemId).getSku();
+        if (current != null && current.equalsIgnoreCase(sku)) {
+            return current;
+        }
+        String canonical = productsPort.canonical(List.of(sku)).get(sku);
+        if (canonical == null) {
+            throw new IllegalArgumentException("El SKU no existe en el catalogo: " + sku);
+        }
+        return canonical;
     }
 
     private OrderItem findItem(Long orderId, Long itemId) {

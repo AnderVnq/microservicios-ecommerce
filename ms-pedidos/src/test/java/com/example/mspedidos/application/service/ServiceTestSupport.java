@@ -4,6 +4,7 @@ import com.example.mspedidos.application.port.in.CreateOrderCommand;
 import com.example.mspedidos.application.port.in.OrderLine;
 import com.example.mspedidos.application.port.out.ActorProvider;
 import com.example.mspedidos.application.port.out.ClientesPort;
+import com.example.mspedidos.application.port.out.ProductsPort;
 import com.example.mspedidos.application.port.out.InventoryPort;
 import com.example.mspedidos.application.port.out.ItemIncidentRepositoryPort;
 import com.example.mspedidos.application.port.out.OrderItemHistoryRepositoryPort;
@@ -25,10 +26,14 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicLong;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -38,7 +43,7 @@ import static org.mockito.Mockito.when;
  * Los jobs de liberaciones y de sincronizacion quedan con un intervalo enorme para que no corran en paralelo a los tests.
  */
 @SpringBootTest(properties = {"orders.inventory-release-job.delay-ms=86400000",
-        "orders.inventory-sync-job.delay-ms=86400000"})
+        "orders.inventory-sync-job.delay-ms=86400000", "orders.product-link-job.delay-ms=86400000"})
 abstract class ServiceTestSupport {
 
     static final int YEAR = 2026;
@@ -51,6 +56,8 @@ abstract class ServiceTestSupport {
     ActorProvider actorProvider;
     @MockitoBean
     InventoryPort inventoryPort;
+    @MockitoBean
+    ProductsPort productsPort;
 
     @Autowired
     JdbcTemplate jdbc;
@@ -72,6 +79,24 @@ abstract class ServiceTestSupport {
         jdbc.update("delete from orders");
         jdbc.update("delete from suppliers");
         when(actorProvider.currentActor()).thenReturn("op-1");
+        // por defecto el catalogo es la identidad: cada SKU del market existe y resuelve a si mismo
+        when(productsPort.resolve(any(), any())).thenAnswer(inv -> {
+            Map<String, String> identity = new HashMap<>();
+            Collection<String> inputs = inv.getArgument(1);
+            if (inputs != null) {
+                inputs.forEach(s -> identity.put(s, s));
+            }
+            return identity;
+        });
+        // y cada SKU interno tecleado existe con esa misma escritura (mapa identidad)
+        when(productsPort.canonical(any())).thenAnswer(inv -> {
+            Map<String, String> identity = new HashMap<>();
+            Collection<String> inputs = inv.getArgument(0);
+            if (inputs != null) {
+                inputs.forEach(s -> identity.put(s, s));
+            }
+            return identity;
+        });
     }
 
     static ImporterDocument dni(String number) {
@@ -123,8 +148,8 @@ abstract class ServiceTestSupport {
         Order order = seedOrder(holderId, orderDate);
         List<OrderItem> items = new ArrayList<>();
         for (int i = 0; i < count; i++) {
-            OrderItem unit = OrderItem.newUnit("SKU-U", "EXT-U", BigDecimal.TEN);
-            items.add(OrderItem.builder().orderId(order.getId()).sku(unit.getSku())
+            OrderItem unit = OrderItem.newUnit("SKU-U", "SKU-U", "EXT-U", BigDecimal.TEN);
+            items.add(OrderItem.builder().orderId(order.getId()).sku(unit.getSku()).marketSku(unit.getMarketSku())
                     .externalItemId(unit.getExternalItemId()).unitPrice(unit.getUnitPrice())
                     .status(unit.getStatus()).importerType(unit.getImporterType()).build());
         }

@@ -61,7 +61,8 @@ public class OrderItemController {
     public OrderItemResponse update(@PathVariable Long orderId, @PathVariable Long itemId,
                                     @Valid @RequestBody UpdateItemRequest request) {
         return OrderItemResponse.from(
-                itemUseCase.updateDetails(orderId, itemId, request.sku(), request.externalItemId(), request.unitPrice()));
+                itemUseCase.updateDetails(orderId, itemId, request.sku(), request.marketSku(),
+                        request.externalItemId(), request.unitPrice()));
     }
 
     @PatchMapping("/{itemId}/status")
