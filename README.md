@@ -115,10 +115,6 @@ curl -s -d grant_type=password -d client_id=api-gateway \
      http://localhost:8180/realms/microservicios/protocol/openid-connect/token
 ```
 
-### 4. Probar la API con Bruno
-
-La colección [`bruno/`](bruno/) tiene una carpeta por recurso (Orders, Purchases, Products, Variants, Inventory, …), y cada petición viene documentada. Empieza por `Auth/Setup`, que crea los permisos de solicitudes de cambio de estado.
-
 ---
 
 ## Desarrollo
